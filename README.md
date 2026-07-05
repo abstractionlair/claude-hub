@@ -65,13 +65,10 @@ versioning, confidence scoring, and Bayesian utility tracking.
 ### Multi-Model Review
 
 Dispatch code, documents, or artifacts to multiple AI models for review and
-synthesize their findings into a consensus report.
-
-- **`dispatch_review`** — Send a review job to selected models (claude, codex,
-  gemini) with content, files, or artifact references.
-- **`check_review_status`** — Poll for completion.
-- **`check_and_synthesize`** — Wait for all reviews, then produce a synthesis.
-- **CLI** — `python3 -m claude_hub.review_cli` for headless operation.
+synthesize their findings into a consensus report. The review engine is
+CLI-based — `python3 -m claude_hub.review_cli` — not exposed as MCP/HTTP
+tools (the request/response models in `src/claude_hub/review_models.py` are
+retained for documentation).
 
 Model registry: `config/review_models.yaml`.
 
@@ -179,7 +176,7 @@ pipe buffer overflow. Idle processes reaped after 30 minutes.
 |---|---|---|
 | `CLAUDE_HUB_CLAUDE_BINARY` | `claude` | Path to the `claude` CLI binary |
 | `CLAUDE_HUB_PROJECT_DIR` | `~/claude-hub` | Project root for sessions, workspaces |
-| `CLAUDE_HUB_SOURCE_DIR` | `~/projects/claude-hub` | Source tree for docs and CLAUDE.md |
+| `CLAUDE_HUB_SOURCE_DIR` | `~/projects/claude-hub` | Source tree for docs served by the hub |
 | `CLAUDE_HUB_PG_DSN` | _(none)_ | PostgreSQL DSN (required for artifacts, connectors, scheduler, notifications, conversations) |
 | `CLAUDE_HUB_JWT_SECRET` | _(none)_ | Enables OAuth 2.1 when set |
 | `HUB_BASE_URL` | `http://localhost:8420` | Public base URL for OAuth metadata |

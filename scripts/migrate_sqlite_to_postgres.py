@@ -8,7 +8,7 @@ from pathlib import Path
 
 import psycopg2
 
-PG_DSN = "postgresql://claude_hub_app:rW1kviL6WlfLzEJq2fJfHJXz9Kts5zi@localhost/claude_hub"
+PG_DSN = os.environ["CLAUDE_HUB_PG_DSN"]
 CLAUDE_DIR = Path.home() / "claude-hub" / ".claude"
 
 
