@@ -12,7 +12,7 @@ name per CLI ("codex-local", "gemini-local") so audit logs are
 readable.
 
 Reads the secret from /etc/claude-hub/claude-hub.env (mode 640
-root:claude on nexus, group-readable). Override with
+root:claude, group-readable). Override with
 CLAUDE_HUB_JWT_SECRET in the environment to skip the file read.
 
 Usage:

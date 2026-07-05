@@ -36,7 +36,7 @@ class ArtifactNotFoundError(Exception):
 _BACKUP_DIR = Path(
     os.environ.get(
         "ARTIFACT_BACKUP_DIR",
-        "/mnt/HC_Volume_104288266/data/backups/artifacts",
+        "data/backups/artifacts",
     )
 )
 

@@ -46,7 +46,7 @@ Examples: weekly data pipeline, daily CBOE options collection, session archiving
 
 Durable infrastructure that no agent owns, no project defines, and no role constitutes. Persistent environmental facts that other concepts depend on.
 
-Examples: PostgreSQL database (claude_hub), FUSE storage mounts (/storage/), email sync (Fastmail via mbsync), GitHub mirror (~/repos/), the attached data volume, SSL certificates.
+Examples: PostgreSQL database (claude_hub), FUSE storage mounts (/storage/), email sync (IMAP via mbsync), GitHub mirror (~/repos/), the attached data volume, SSL certificates.
 
 ### Session
 
@@ -165,15 +165,15 @@ Two sections with different trust levels:
 ## Capabilities (stable)
 /fork-agent, /launch-model, /session-search, /artifact-store, /query-database,
 /review, /system-admin, /write-design-doc, /debug-python, /publish-simple-publication,
-/test-driven-development, /hook-developer, /scott-writing-style
+/test-driven-development, /hook-developer, /writing-style
 
 ## Environment (verify before acting)
 DB: postgres@localhost:5432 (claude_hub)
 Web: claude-hub :8420, nginx :80/:443
 Storage: /storage/{google,onedrive,pcloud,dropbox} (FUSE — NEVER traverse recursively)
   Safe subdirs: local/, mail/, calendar/, contacts/, dropbox/
-Email: Fastmail via mbsync → /storage/mail/fastmail/
-Volume: /mnt/HC_Volume_104288266/ (50GB) — data, postgres tablespace
+Email: IMAP via mbsync → /storage/mail/
+Volume: attached data volume — data, postgres tablespace
 GitHub mirror: ~/repos/ (read-only, not active working copies)
 Collectors: polymarket (persistent), cboe/fred/coingecko (daily), weekly pipeline
 ```

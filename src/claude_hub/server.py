@@ -117,7 +117,7 @@ from claude_hub.work_graph_models import (
     WgAddDependencyResponse, WgUpdateResponse,
 )
 
-# Work-graph service runs as a separate process on nexus, bound to
+# Work-graph service runs as a separate process on the host, bound to
 # localhost only. claude-hub forwards /tools/wg_* calls to it rather
 # than importing its code, so the two services can be deployed
 # independently and don't share a Python process.

@@ -222,8 +222,11 @@ pass count: **638 tests passed**.
   hub_*, files_*, and GitHub tools function.
 - **Work-graph is a separate service.** Must be deployed independently (not in
   this repo). claude-hub forwards calls to it but does not ship its code.
-- **Deployment-specific details removed.** Systemd units, nginx config, FUSE
-  mounts, and infrastructure manifests have been scrubbed from the public tree.
-  See `CONTEXT.md` in the private repo for the full picture.
+- **Deployment specifics reduced, not eliminated.** Host-specific
+  configuration (nginx, secrets, machine identifiers, ops runbooks) lives in
+  the private deployment and is not in this tree. Reference systemd units
+  ship in `scripts/services/`; storage paths and URLs are environment-driven
+  (`HUB_BASE_URL`, `ARTIFACT_BACKUP_DIR`, `CLAUDE_HUB_PG_DSN`, ...). The
+  private process archive (design reviews, session transcripts) is excluded.
 - **No horizontal scaling.** Single-process FastAPI with in-memory state
   (routing table, pending responses). Restart drops pending messages.
