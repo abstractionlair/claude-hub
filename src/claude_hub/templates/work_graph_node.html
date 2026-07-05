@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ node.id }}: {{ node.text[:60] }} — Work Graph</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #060a14;
+            --bg: #0a0e1a;
+            --surface: #111827;
+            --surface-raised: #1a2235;
+            --border: #1e293b;
+            --border-lit: #2a3a52;
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+            --text-faint: #475569;
+            --accent: #e94560;
+            --cyan: #22d3ee;
+            --green: #34d399;
+            --amber: #fbbf24;
+            --red: #f87171;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Outfit', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container { max-width: 920px; margin: 0 auto; }
+
+        /* breadcrumb */
+        .crumbs {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 18px;
+        }
+        .crumbs a { color: var(--cyan); text-decoration: none; }
+        .crumbs a:hover { text-decoration: underline; }
+        .crumbs .sep { color: var(--text-faint); }
+        .crumbs .here { color: var(--text); }
+        .crumbs .home { color: var(--text-dim); }
+        .crumbs .home:hover { color: var(--text); }
+
+        /* node card */
+        .node-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 24px 26px;
+            margin-bottom: 24px;
+        }
+        .node-id {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            color: var(--text-faint);
+            margin-bottom: 6px;
+        }
+        .node-text {
+            font-size: 22px;
+            font-weight: 500;
+            line-height: 1.35;
+            margin-bottom: 14px;
+        }
+        .node-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            font-size: 13px;
+            color: var(--text-dim);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .node-meta .label { color: var(--text-faint); }
+        .node-notes {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            color: var(--text-dim);
+            font-size: 14px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .status-captured { color: var(--cyan); background: rgba(34, 211, 238, 0.10); }
+        .status-in-progress { color: var(--amber); background: rgba(251, 191, 36, 0.10); }
+        .status-done { color: var(--green); background: rgba(52, 211, 153, 0.10); }
+        .status-wont-do { color: var(--text-faint); background: rgba(100, 116, 139, 0.10); }
+
+        section {
+            margin-bottom: 24px;
+        }
+        h2 {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+
+        .child {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            text-decoration: none;
+            color: inherit;
+            transition: border-color 0.15s ease;
+        }
+        .child:hover { border-color: var(--border-lit); }
+        .child-id {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--text-faint);
+        }
+        .child-text { flex: 1; font-size: 14px; }
+
+        .edges-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+        @media (max-width: 600px) { .edges-grid { grid-template-columns: 1fr; } }
+        .edge-group {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px;
+        }
+        .edge-group h3 {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+        .edge {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            padding: 6px 0;
+            text-decoration: none;
+            color: inherit;
+            font-size: 13px;
+        }
+        .edge:hover .edge-text { color: var(--cyan); }
+        .edge-arrow {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            color: var(--text-faint);
+            min-width: 22px;
+        }
+        .edge-arrow.outgoing { color: var(--accent); }
+        .edge-arrow.incoming { color: var(--amber); }
+        .edge-id {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--text-faint);
+        }
+        .edge-text { flex: 1; }
+        .edge-empty { color: var(--text-faint); font-size: 12px; font-style: italic; }
+
+        .error {
+            background: rgba(248, 113, 113, 0.05);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: var(--red);
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+        }
+
+        footer {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            color: var(--text-faint);
+            font-size: 12px;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        footer a { color: var(--text-dim); text-decoration: none; }
+        footer a:hover { color: var(--cyan); }
+    </style>
+</head>
+<body>
+<div class="container">
+    {% if error %}
+        <div class="crumbs">
+            <a href="/work-graph" class="home">← all roots</a>
+        </div>
+        <div class="error">{{ error }}</div>
+    {% else %}
+        {# Provenance breadcrumbs: home → root → ... → here #}
+        <div class="crumbs">
+            <a href="/work-graph" class="home">all roots</a>
+            <span class="sep">/</span>
+            {% for crumb in provenance_path %}
+                {% if loop.last %}
+                    <span class="here">{{ crumb.id }}</span>
+                {% else %}
+                    <a href="/work-graph/{{ crumb.id }}">{{ crumb.id }}</a>
+                    <span class="sep">/</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="node-card">
+            <div class="node-id">{{ node.id }}</div>
+            <div class="node-text">{{ node.text }}</div>
+            <div class="node-meta">
+                <span class="status status-{{ node.status|replace("'", "")|replace(" ", "-") }}">{{ node.status }}</span>
+                <span><span class="label">created</span> {{ node.created[:16]|replace("T", " ") }}</span>
+                {% if node.resolved %}
+                    <span><span class="label">resolved</span> {{ node.resolved[:16]|replace("T", " ") }}</span>
+                {% endif %}
+            </div>
+            {% if node.notes %}
+                <div class="node-notes">{{ node.notes }}</div>
+            {% endif %}
+        </div>
+
+        <section>
+            <h2>Children ({{ children|length }})</h2>
+            {% if children %}
+                {% for child in children %}
+                    <a class="child" href="/work-graph/{{ child.id }}">
+                        <span class="child-id">{{ child.id }}</span>
+                        <span class="child-text">{{ child.text }}</span>
+                        <span class="status status-{{ child.status|replace("'", "")|replace(" ", "-") }}">{{ child.status }}</span>
+                    </a>
+                {% endfor %}
+            {% else %}
+                <div class="edge-empty" style="padding: 8px 0;">No children.</div>
+            {% endif %}
+        </section>
+
+        <section>
+            <h2>Edges</h2>
+            <div class="edges-grid">
+                <div class="edge-group">
+                    <h3>Blocks</h3>
+                    {% if edges.blocks %}
+                        {% for e in edges.blocks %}
+                            <a class="edge" href="/work-graph/{{ e.id }}">
+                                {% if e.direction == 'outgoing' %}
+                                    <span class="edge-arrow outgoing" title="this node blocks {{ e.id }}">→ blocks</span>
+                                {% else %}
+                                    <span class="edge-arrow incoming" title="{{ e.id }} blocks this node">← blocked by</span>
+                                {% endif %}
+                                <span class="edge-id">{{ e.id }}</span>
+                                <span class="edge-text">{{ e.text }}</span>
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="edge-empty">none</div>
+                    {% endif %}
+                </div>
+                <div class="edge-group">
+                    <h3>Related</h3>
+                    {% if edges.related %}
+                        {% for e in edges.related %}
+                            <a class="edge" href="/work-graph/{{ e.id }}">
+                                <span class="edge-arrow">↔</span>
+                                <span class="edge-id">{{ e.id }}</span>
+                                <span class="edge-text">{{ e.text }}</span>
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="edge-empty">none</div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
+    <footer>
+        Read-only view · data via <a href="/openapi.json#/default/wg_goto_tools_wg_goto_post">wg_goto</a>
+    </footer>
+</div>
+</body>
+</html>

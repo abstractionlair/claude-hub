@@ -1,0 +1,15 @@
+runtime: python
+test_deps: ".[dev]"
+
+services:
+  - scripts/services/claude-hub.service
+  - scripts/services/github-mirror.service
+  - scripts/services/github-mirror.timer
+
+copy:
+  - src/
+  - scripts/
+  - config/
+  - migrations/
+
+config_path: /etc/claude-hub/

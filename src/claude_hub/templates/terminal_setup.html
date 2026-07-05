@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal Access - Setup</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 32px;
+            max-width: 480px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+            color: #f0f6fc;
+        }
+        .subtitle {
+            color: #8b949e;
+            margin-bottom: 24px;
+        }
+        .error {
+            background: #b6252520;
+            border: 1px solid #f8514940;
+            color: #f85149;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        .steps {
+            margin-bottom: 24px;
+        }
+        .step {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .step-number {
+            background: #238636;
+            color: #fff;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .step-content {
+            flex: 1;
+        }
+        .step-title {
+            font-weight: 500;
+            color: #f0f6fc;
+            margin-bottom: 8px;
+        }
+        .step-desc {
+            color: #8b949e;
+            font-size: 14px;
+        }
+        .qr-container {
+            background: #fff;
+            padding: 16px;
+            border-radius: 8px;
+            display: inline-block;
+            margin: 16px 0;
+        }
+        .qr-container img {
+            display: block;
+        }
+        .secret-box {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            word-break: break-all;
+            color: #79c0ff;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #30363d;
+        }
+        label {
+            font-weight: 500;
+            color: #f0f6fc;
+        }
+        input[type="text"] {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 24px;
+            color: #f0f6fc;
+            text-align: center;
+            letter-spacing: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #1f6feb;
+            box-shadow: 0 0 0 3px #1f6feb30;
+        }
+        input[type="text"]::placeholder {
+            letter-spacing: 2px;
+            color: #484f58;
+        }
+        button {
+            background: #238636;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2ea043;
+        }
+        .help-text {
+            color: #8b949e;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Set Up Terminal Access</h1>
+        <p class="subtitle">Configure two-factor authentication for terminal access</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <div class="steps">
+            <div class="step">
+                <span class="step-number">1</span>
+                <div class="step-content">
+                    <div class="step-title">Install an authenticator app</div>
+                    <div class="step-desc">
+                        Use Google Authenticator, Authy, 1Password, or any TOTP-compatible app.
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <div class="step-content">
+                    <div class="step-title">Scan this QR code</div>
+                    <div class="step-desc">
+                        Open your authenticator app and scan the code below.
+                    </div>
+                    <div class="qr-container">
+                        <img src="{{ qr_data_uri }}" alt="QR Code" width="200" height="200">
+                    </div>
+                    <div class="step-desc">
+                        Or enter this secret manually:
+                    </div>
+                    <div class="secret-box">{{ secret }}</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <div class="step-content">
+                    <div class="step-title">Verify setup</div>
+                    <div class="step-desc">
+                        Enter the 6-digit code from your authenticator app to complete setup.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" action="/terminal/setup">
+            <input type="hidden" name="secret" value="{{ secret }}">
+
+            <div>
+                <label for="code">Verification Code</label>
+                <input type="text"
+                       id="code"
+                       name="code"
+                       maxlength="6"
+                       pattern="[0-9]{6}"
+                       placeholder="000000"
+                       autocomplete="one-time-code"
+                       inputmode="numeric"
+                       required
+                       autofocus>
+            </div>
+
+            <button type="submit">Complete Setup</button>
+
+            <p class="help-text">
+                This code changes every 30 seconds. Make sure to enter the current code.
+            </p>
+        </form>
+    </div>
+
+    <script>
+        // Auto-submit when 6 digits entered
+        document.getElementById('code').addEventListener('input', function(e) {
+            // Remove non-digits
+            this.value = this.value.replace(/\D/g, '');
+
+            if (this.value.length === 6) {
+                this.form.submit();
+            }
+        });
+    </script>
+</body>
+</html>

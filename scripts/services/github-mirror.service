@@ -1,0 +1,12 @@
+[Unit]
+Description=Mirror GitHub repos to local filesystem
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=claude
+WorkingDirectory=/home/claude/deploy/claude-hub/scripts
+ExecStart=/home/claude/deploy/claude-hub/scripts/github-mirror-sync.sh
+EnvironmentFile=/etc/claude-hub/claude-hub.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/claude/.local/bin

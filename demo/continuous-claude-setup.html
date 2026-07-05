@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Continuous Claude Setup</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --text: #e8e8e8;
+            --accent: #e94560;
+            --accent2: #0f3460;
+            --code-bg: #0d1117;
+            --border: #30475e;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: var(--text);
+            margin-top: 40px;
+            padding: 10px;
+            background: var(--accent2);
+            border-radius: 4px;
+        }
+
+        .instructions {
+            background: var(--surface);
+            border-left: 4px solid var(--accent);
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .prompt-container {
+            position: relative;
+            margin: 20px 0;
+        }
+
+        .prompt {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #ff6b6b;
+        }
+
+        .copy-btn.copied {
+            background: #4caf50;
+        }
+
+        .note {
+            background: var(--accent2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .note strong {
+            color: var(--accent);
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+
+        a {
+            color: var(--accent);
+        }
+
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Minimal Continuous Claude Setup</h1>
+
+        <div class="instructions">
+            <strong>How to use:</strong><br>
+            1. Copy the prompt below (use the button or select all)<br>
+            2. Paste it into your local Claude Code session<br>
+            3. Claude will create the full infrastructure automatically<br>
+            <br>
+            <strong>No external dependencies required.</strong> Works entirely locally.
+        </div>
+
+        <h2>The Setup Prompt</h2>
+
+        <div class="prompt-container">
+            <button class="copy-btn" onclick="copyPrompt()">Copy Prompt</button>
+            <div class="prompt" id="prompt">I need you to set up a minimal Continuous Claude infrastructure in this project. This should work entirely locally with no external API dependencies.
+
+Create the following structure:
+
+### 1. Directory Structure
+
+```
+.claude/
+  hooks/
+    session-start.sh
+  skills/
+    SKILL.md (template)
+  settings.json
+thoughts/
+  ledgers/
+    LEDGER_TEMPLATE.md
+  handoffs/
+    HANDOFF_TEMPLATE.md
+```
+
+### 2. Ledger Template (thoughts/ledgers/LEDGER_TEMPLATE.md)
+
+Create a ledger template with these sections:
+- **Goal**: What success looks like (concrete, measurable)
+- **Constraints**: Technical requirements, patterns to follow
+- **Key Decisions**: Choices made with rationale (dated)
+- **State**: Done/Now/Next with checkboxes for multi-phase work
+- **Open Questions**: Mark uncertain items as UNCONFIRMED
+- **Working Set**: Key files, branch name, test commands
+
+The State section should use checkboxes:
+- `[x]` = Completed
+- `[→]` = In progress (current)
+- `[ ]` = Pending
+
+### 3. Handoff Template (thoughts/handoffs/HANDOFF_TEMPLATE.md)
+
+Create a handoff template with:
+- **Context**: What was being worked on
+- **Status**: Current state (working/blocked/complete)
+- **Key Files**: Files that were modified or are relevant
+- **What's Next**: Concrete next steps
+- **Blockers**: Any issues encountered
+- **Notes**: Anything the next session should know
+
+### 4. Session Start Hook (.claude/hooks/session-start.sh)
+
+Create a shell script that:
+1. Checks if a ledger exists in thoughts/ledgers/
+2. If found, outputs a JSON message telling Claude to read it
+3. The hook should be simple - just echo the JSON, no external dependencies
+
+The output format should be:
+```json
+{"result": "continue", "message": "Active ledger found: [filename]. Read it to restore context."}
+```
+
+Make the script executable.
+
+### 5. Settings (.claude/settings.json)
+
+Register the session-start hook:
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+      }]
+    }]
+  }
+}
+```
+
+### 6. Skill Template (.claude/skills/SKILL.md)
+
+Create a template showing the skill format:
+```yaml
+---
+name: skill-name
+description: What this skill does
+---
+```
+
+Followed by the skill instructions in markdown.
+
+### 7. A Working Example
+
+After creating the templates, create an actual ledger for this setup task:
+- `thoughts/ledgers/CONTINUITY_setup-complete.md`
+- Mark the infrastructure setup as complete
+- Add a "Next" item: "Create first project-specific skill"
+
+### Key Principles
+
+1. **Ledgers are the source of truth** - Update them before clearing context
+2. **Handoffs transfer work** - Create one when passing to another session
+3. **Hooks inject context** - Session start loads the ledger automatically
+4. **Skills encapsulate workflows** - Reusable patterns get their own skill file
+
+### Usage Pattern
+
+When starting work:
+1. Check for active ledger (hook does this automatically)
+2. Read the ledger to restore context
+3. Find the `[→]` marker for current work
+
+When ending work:
+1. Update ledger with current state
+2. Move `[→]` to next item or mark `[x]` complete
+3. Note any UNCONFIRMED items
+
+When handing off:
+1. Create handoff document with full context
+2. Reference it in the ledger
+3. Clear session with confidence
+
+Now please implement this structure. Make the files executable where needed, and ensure everything works without any external services or API calls.</div>
+        </div>
+
+        <div class="note">
+            <strong>Note:</strong> This creates a minimal setup. The full Continuous Claude system includes additional features like:
+            <ul>
+                <li>MCP servers for external tool integration</li>
+                <li>Braintrust session tracing</li>
+                <li>Compound learnings extraction</li>
+                <li>Multiple specialized agents</li>
+            </ul>
+            Those can be added later once the basics are working.
+        </div>
+
+        <h2>After Setup</h2>
+
+        <p>Once Claude creates the infrastructure, you'll have:</p>
+        <ul>
+            <li><code>thoughts/ledgers/</code> - For tracking ongoing work across sessions</li>
+            <li><code>thoughts/handoffs/</code> - For passing context between sessions</li>
+            <li><code>.claude/hooks/</code> - Automatic context loading on session start</li>
+            <li><code>.claude/skills/</code> - Reusable workflow templates</li>
+        </ul>
+
+        <p>The session-start hook will automatically detect ledgers and remind Claude to read them, preserving continuity across context clears.</p>
+
+        <footer>
+            Claude Hub &middot; <a href="/">Home</a> &middot; <a href="/demo/">Demos</a>
+        </footer>
+    </div>
+
+    <script>
+        function copyPrompt() {
+            const prompt = document.getElementById('prompt').innerText;
+            navigator.clipboard.writeText(prompt).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy Prompt';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

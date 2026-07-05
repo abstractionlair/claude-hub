@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0d1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Terminal - Claude Hub</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100%;
+            background: #0d1117;
+            overflow: hidden;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #c9d1d9;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 44px;
+            flex-shrink: 0;
+        }
+        .title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .title h1 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #3fb950;
+        }
+        .status-dot.disconnected {
+            background: #f85149;
+        }
+        .actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-danger { color: #f85149; }
+        .terminal-container {
+            flex: 1;
+            position: relative;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #0d1117;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #8b949e;
+            font-size: 16px;
+        }
+        .loading::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="title">
+            <span class="status-dot" id="statusDot"></span>
+            <h1>Terminal</h1>
+        </div>
+        <div class="actions">
+            <form method="post" action="/terminal/logout" style="display: inline;">
+                <button type="submit" class="btn btn-danger">Logout</button>
+            </form>
+        </div>
+    </header>
+
+    <div class="terminal-container">
+        <div class="loading" id="loading">Connecting to terminal</div>
+        <iframe id="terminal"
+                src="/terminal/ws"
+                style="display: none;"
+                allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+
+    <script>
+        var iframe = document.getElementById('terminal');
+        var loading = document.getElementById('loading');
+        var statusDot = document.getElementById('statusDot');
+
+        iframe.onload = function() {
+            loading.style.display = 'none';
+            iframe.style.display = 'block';
+            statusDot.classList.remove('disconnected');
+        };
+
+        iframe.onerror = function() {
+            loading.textContent = 'Failed to connect';
+            statusDot.classList.add('disconnected');
+        };
+
+        setInterval(function() {
+            fetch('/terminal/ping', { method: 'HEAD' })
+                .then(function(r) {
+                    if (r.ok) {
+                        statusDot.classList.remove('disconnected');
+                    } else {
+                        statusDot.classList.add('disconnected');
+                    }
+                })
+                .catch(function() {
+                    statusDot.classList.add('disconnected');
+                });
+        }, 30000);
+    </script>
+    <script src="/static/nav.js"></script>
+    <script>initNav('terminal');</script>
+</body>
+</html>

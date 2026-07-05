@@ -1,0 +1,3 @@
+# Publishing configuration for claude-hub
+security: authenticated
+prefix: claude-hub

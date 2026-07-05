@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work Graph — Roots</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #060a14;
+            --bg: #0a0e1a;
+            --surface: #111827;
+            --surface-raised: #1a2235;
+            --border: #1e293b;
+            --border-lit: #2a3a52;
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+            --text-faint: #475569;
+            --accent: #e94560;
+            --cyan: #22d3ee;
+            --green: #34d399;
+            --amber: #fbbf24;
+            --red: #f87171;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Outfit', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container { max-width: 920px; margin: 0 auto; }
+        header {
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-weight: 600;
+            font-size: 22px;
+            letter-spacing: -0.01em;
+        }
+        h1 .accent { color: var(--accent); }
+        .summary { color: var(--text-dim); font-size: 14px; }
+        .summary strong { color: var(--text); font-weight: 600; }
+
+        .root {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 18px;
+            margin-bottom: 12px;
+            transition: border-color 0.15s ease, transform 0.15s ease;
+            display: block;
+            text-decoration: none;
+            color: inherit;
+        }
+        .root:hover {
+            border-color: var(--border-lit);
+            transform: translateX(2px);
+        }
+        .root-head {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        .root-id {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            color: var(--text-faint);
+        }
+        .root-text {
+            font-size: 16px;
+            font-weight: 500;
+            flex: 1;
+        }
+        .root-meta {
+            display: flex;
+            gap: 18px;
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .root-meta .label { color: var(--text-faint); }
+        .root-meta .num { color: var(--text); font-variant-numeric: tabular-nums; }
+        .root-meta .activity { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .status-captured { color: var(--cyan); background: rgba(34, 211, 238, 0.10); }
+        .status-in-progress { color: var(--amber); background: rgba(251, 191, 36, 0.10); }
+        .status-done { color: var(--green); background: rgba(52, 211, 153, 0.10); }
+        .status-wont-do { color: var(--text-faint); background: rgba(100, 116, 139, 0.10); }
+
+        .empty {
+            background: var(--surface);
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 36px;
+            text-align: center;
+            color: var(--text-dim);
+        }
+        .empty .hint { color: var(--text-faint); font-size: 13px; margin-top: 8px; font-family: 'IBM Plex Mono', monospace; }
+
+        .error {
+            background: rgba(248, 113, 113, 0.05);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: var(--red);
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+        }
+
+        footer {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            color: var(--text-faint);
+            font-size: 12px;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        footer a { color: var(--text-dim); text-decoration: none; }
+        footer a:hover { color: var(--cyan); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>Work <span class="accent">Graph</span></h1>
+        <span class="summary"><strong>{{ roots|length }}</strong> root{% if roots|length != 1 %}s{% endif %}</span>
+    </header>
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% elif not roots %}
+        <div class="empty">
+            <div>No roots yet.</div>
+            <div class="hint">Capture from any session: wg_capture(text="...")</div>
+        </div>
+    {% else %}
+        {% for root in roots %}
+            <a class="root" href="/work-graph/{{ root.id }}">
+                <div class="root-head">
+                    <span class="root-id">{{ root.id }}</span>
+                    <span class="root-text">{{ root.text }}</span>
+                    <span class="status status-{{ root.status|replace("'", "")|replace(" ", "-") }}">{{ root.status }}</span>
+                </div>
+                <div class="root-meta">
+                    <span><span class="label">descendants</span> <span class="num">{{ root.child_count }}</span></span>
+                    <span><span class="label">captured</span> <span class="num">{{ root.captured_count }}</span></span>
+                    <span class="activity"><span class="label">last</span> {{ root.last_activity[:16]|replace("T", " ") }}</span>
+                </div>
+            </a>
+        {% endfor %}
+    {% endif %}
+
+    <footer>
+        Read-only view · data via <a href="/openapi.json#/default/wg_status_tools_wg_status_post">wg_status</a>
+    </footer>
+</div>
+</body>
+</html>

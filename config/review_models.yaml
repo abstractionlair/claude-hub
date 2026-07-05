@@ -1,0 +1,90 @@
+# Multi-Model Review System — Model Configuration
+#
+# Each model entry specifies how to invoke it as an agent or text processor.
+# mode: agentic — model reads files itself via codebase access
+# mode: bundled — content written to temp file, passed alongside prompt
+#
+# Placeholders in invoke arrays:
+#   {prompt}      — the constructed review prompt (inline, for agentic models)
+#   {prompt_file} — path to temp file containing the prompt
+#   {file}        — path to temp file containing bundled content (bundled mode only)
+#
+# stdin_prompt: true — pipe prompt content via subprocess stdin instead of
+#   command-line args.  Avoids ARG_MAX limits for large prompts.  The engine
+#   reads {prompt_file} and passes its content as subprocess input=.
+
+models:
+  claude:
+    display_name: "Claude (Anthropic)"
+    mode: agentic
+    invoke: ["claude", "--model", "opus", "--effort", "high", "--output-format", "json", "-p", "Follow the review instructions provided via stdin."]
+    stdin_prompt: true
+    cost_tier: subscription
+    max_input_chars: 400000
+    timeout_seconds: 600
+    clean_room_flags: []  # --profile not yet available in Claude CLI
+    session_id_format: claude
+    resume_cmd: ["claude", "--session-id", "{session_id}", "--output-format", "json", "-p", "-"]
+    grading_cmd: ["claude", "--model", "opus", "--output-format", "json", "--allowedTools", "", "--bare", "-p", "-"]
+
+  claude-sonnet-4.6:
+    display_name: "Claude Sonnet 4.6 (Anthropic)"
+    mode: agentic
+    invoke: ["claude", "--model", "sonnet", "--effort", "high", "--output-format", "json", "-p", "Follow the review instructions provided via stdin."]
+    stdin_prompt: true
+    cost_tier: subscription
+    max_input_chars: 400000
+    timeout_seconds: 600
+    clean_room_flags: []
+    session_id_format: claude
+    resume_cmd: ["claude", "--session-id", "{session_id}", "--output-format", "json", "-p", "-"]
+    grading_cmd: ["claude", "--model", "opus", "--output-format", "json", "--allowedTools", "", "--bare", "-p", "-"]
+
+  gemini-3.1-pro:
+    display_name: "Gemini 3.1 Pro (Google)"
+    mode: agentic
+    invoke: ["gemini", "-m", "gemini-3.1-pro-preview", "-o", "json", "--include-directories", "/tmp"]
+    stdin_prompt: true
+    cost_tier: subscription
+    max_input_chars: 2000000
+    timeout_seconds: 600
+    clean_room_flags: []
+    session_id_format: gemini
+    resume_cmd: ["gemini", "--resume", "{session_id}", "-o", "json", "-p", "-"]
+    grading_cmd: ["gemini", "-m", "gemini-3.1-pro-preview", "-o", "json", "-p", "-"]
+
+  gemini-3-flash:
+    display_name: "Gemini 3 Flash (Google)"
+    mode: agentic
+    invoke: ["gemini", "-m", "gemini-3-flash-preview", "-o", "json", "--include-directories", "/tmp"]
+    stdin_prompt: true
+    cost_tier: subscription
+    max_input_chars: 1000000
+    timeout_seconds: 600
+    clean_room_flags: []
+    session_id_format: gemini
+    resume_cmd: ["gemini", "--resume", "{session_id}", "-o", "json", "-p", "-"]
+    grading_cmd: ["gemini", "-m", "gemini-3-flash-preview", "-o", "json", "-p", "-"]
+
+  gpt-5.4:
+    display_name: "GPT-5.4 (via Codex)"
+    mode: agentic
+    invoke: ["codex", "exec", "-m", "gpt-5.4", "--sandbox", "read-only", "--skip-git-repo-check", "--json", "-"]
+    stdin_prompt: true
+    cost_tier: subscription
+    max_input_chars: 256000
+    timeout_seconds: 900
+    clean_room_flags: []
+    session_id_format: codex
+    resume_cmd: ["codex", "exec", "resume", "--json", "{session_id}", "-"]
+    grading_cmd: ["codex", "exec", "-m", "gpt-5.4", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--json", "-"]
+
+  # --- Dropped models (2026-03-31) ---
+  # Review grades showed 0-67% pass rates with false negatives and HARMFUL grades.
+  # Kept in config for reference but disabled.
+  #
+  # kimi-k2.5, gpt-5.3-codex, glm-5, minimax-m2.7, grok-code-fast-1, mimo-v2-pro
+
+synthesis:
+  model: claude
+  timeout_seconds: 120
