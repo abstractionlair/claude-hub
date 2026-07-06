@@ -93,7 +93,7 @@ This is a production-deployed personal system (see `deploy.yaml` and `scripts/se
 Known rough edges, tracked openly:
 
 - **Continuity fork.** The session-ID remap after `claude --fork-session` can leave the `.current-<id>` pointer stale, so a fork may write to the wrong window or create a stray one. Every fork also reloads the full session context via `claude --resume --print`, which is heavy on long sessions. See `KNOWN_ISSUES.md` for the full diagnosis.
-- **Gemini integration.** Group chat and review currently invoke the `gemini` CLI. A non-CLI driver migration is not implemented in this repo.
+- **Gemini integration.** Group chat and review drive Gemini by shelling out to the standalone `gemini` CLI, which Google has since retired in favor of Antigravity. The Gemini seat therefore fails to spawn until the launcher is ported to Antigravity's binary and session model; Claude and GPT-5/Codex are unaffected.
 - **Docs lag.** Some design docs still reference untracked `~/.claude` shell hooks and older ledger/append-log patterns that predate the artifact store and observation store.
 - **Single-operator model.** Auth protects the public surface, but there is no multi-tenancy or per-user isolation.
 
@@ -121,7 +121,7 @@ Known rough edges, tracked openly:
 ## Running locally
 
 ```bash
-cd ~/projects/claude-hub
+cd claude-hub
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
