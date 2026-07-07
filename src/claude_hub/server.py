@@ -3592,13 +3592,17 @@ mcp.mount_sse(mount_path="/mcp-sse")  # SSE compat for legacy clients (deprecate
 
 
 def main():
-    """Run the server."""
+    """Run the server (dev helper).
+
+    Binds to 127.0.0.1 to match the documented deployment posture — the
+    reverse proxy is the only public door. Production uses the systemd
+    unit (scripts/services/claude-hub.service), not this helper.
+    """
     import uvicorn
     uvicorn.run(
         "claude_hub.server:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8420,
-        reload=True,
     )
 
 
