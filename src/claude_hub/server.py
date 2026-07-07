@@ -52,6 +52,7 @@ from .auth import (
     get_current_client,
     is_oauth21_enabled,
     require_auth,
+    verify_token,
     JWT_SECRET,
     TOKEN_TYPE_AUTHORIZATION_CODE,
 )
@@ -1035,26 +1036,30 @@ async def health():
 
 
 @app.get("/debug/headers")
-async def debug_headers(request: Request):
+async def debug_headers(request: Request, client: str = Depends(get_current_client)):
     """Debug: show incoming headers."""
+    require_auth(client)
     return {"headers": dict(request.headers)}
 
 
 @app.get("/debug/routes")
-async def debug_routes():
+async def debug_routes(client: str = Depends(get_current_client)):
     """Debug: show all routes."""
+    require_auth(client)
     return routing_table.get_all_routes()
 
 
 @app.get("/debug/sessions")
-async def debug_sessions():
+async def debug_sessions(client: str = Depends(get_current_client)):
     """Debug: show all sessions."""
+    require_auth(client)
     return {"sessions": session_manager.list_sessions()}
 
 
 @app.get("/debug/pending")
-async def debug_pending():
+async def debug_pending(client: str = Depends(get_current_client)):
     """Debug: show pending hub_send responses."""
+    require_auth(client)
     return {
         rid: {"status": entry["status"], "response_len": len(entry.get("response", "")), "conversation_id": entry.get("conversation_id")}
         for rid, entry in pending_responses.items()
@@ -1062,12 +1067,13 @@ async def debug_pending():
 
 
 @app.get("/debug/memory")
-async def debug_memory():
+async def debug_memory(client: str = Depends(get_current_client)):
     """Debug: memory diagnostics for leak detection.
 
     Shows process RSS, key dict sizes, chat process count, and
     optionally tracemalloc top allocators if tracemalloc is active.
     """
+    require_auth(client)
     import resource
     result: dict = {}
 
@@ -1894,13 +1900,17 @@ class ChatSendResponse(BaseModel):
 async def chat_send(
     params: ChatSendParams,
     request: Request,
+    client: str = Depends(get_current_client),
 ):
     """
     Send a message to Main Claude via web chat.
 
-    Auth: nginx basic auth only (enforced at proxy layer).
-    This endpoint is excluded from MCP tools so OAuth is not needed.
+    Auth: Bearer token (same OAuth 2.1 gate as the MCP tool endpoints),
+    in addition to any proxy-layer auth. This endpoint forwards text into
+    a tool-equipped Claude process, so it must not rely on the reverse
+    proxy alone.
     """
+    require_auth(client)
 
     # Prepend context so Main Claude knows this is from web chat
     contextualized_message = f"[Web Chat] {params.message}"
@@ -2402,7 +2412,24 @@ async def websocket_group_chat(websocket: WebSocket, conversation_id: str):
             {"type": "pong"}                                  -- keepalive reply
             {"type": "keepalive"}                             -- periodic keepalive
             {"type": "error", "error": "..."}                 -- error
+
+    Auth: when OAuth 2.1 is enabled, the handshake requires a valid Bearer
+    token — either an `Authorization: Bearer <token>` header or a `token`
+    query parameter (browsers cannot set headers on WebSocket connects).
+    Unauthenticated handshakes are closed with policy-violation code 1008.
     """
+    if is_oauth21_enabled():
+        token = None
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:]
+        if not token:
+            token = websocket.query_params.get("token")
+        if not token or verify_token(token) is None:
+            # Reject before accept: policy violation (1008).
+            await websocket.close(code=1008)
+            return
+
     await websocket.accept()
 
     # Get human participant name from query param, default "User"
