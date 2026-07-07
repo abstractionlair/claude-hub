@@ -1,5 +1,5 @@
 -- Phase 1: Foundation + Artifact Store
--- Creates core artifact tables on the artifact_data tablespace
+-- Creates core artifact tables
 
 -- Enable pgvector extension (required for vector(768) type)
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -23,7 +23,7 @@ CREATE TABLE artifacts (
     sensitive BOOLEAN NOT NULL DEFAULT FALSE,
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     metadata JSONB NOT NULL DEFAULT '{}'
-) TABLESPACE artifact_data;
+);
 
 -- Immutable version chain (R1.1)
 CREATE TABLE artifact_versions (
@@ -34,7 +34,7 @@ CREATE TABLE artifact_versions (
     content_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(artifact_id, version)
-) TABLESPACE artifact_data;
+);
 
 -- Vector storage (R1.2)
 CREATE TABLE artifact_embeddings (
@@ -49,7 +49,7 @@ CREATE TABLE artifact_embeddings (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(artifact_id)
-) TABLESPACE artifact_data;
+);
 
 -- Outcome tracking (R5)
 CREATE TABLE artifact_outcomes (
@@ -60,7 +60,7 @@ CREATE TABLE artifact_outcomes (
     reasoning TEXT,
     rated_by TEXT NOT NULL DEFAULT 'human',
     rated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) TABLESPACE artifact_data;
+);
 
 -- Indexes
 CREATE INDEX idx_artifacts_type ON artifacts(artifact_type);

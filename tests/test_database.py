@@ -128,3 +128,49 @@ class TestRunMigrations:
         # 002 SHOULD be executed
         assert any("CREATE TABLE posts" in sql for sql in executed_sql)
         assert any("002_create_posts" in sql for sql in executed_sql)
+
+
+# ---------------------------------------------------------------------------
+# create_pool: fresh-database pgvector bootstrap
+# ---------------------------------------------------------------------------
+
+
+class TestCreatePoolBootstrap:
+    @pytest.mark.asyncio
+    async def test_ensures_vector_extension_before_pool(self):
+        """create_pool must CREATE EXTENSION IF NOT EXISTS vector first.
+
+        The pool's init callback registers the pgvector codec, which fails
+        on a fresh database where migration 001 (which creates the
+        extension) has not run yet — and can't, without a pool.
+        """
+        boot_conn = MagicMock()
+        boot_conn.execute = AsyncMock()
+        boot_conn.close = AsyncMock()
+
+        call_order = []
+        boot_conn.execute.side_effect = lambda sql: call_order.append("extension") or None
+
+        async def fake_create_pool(*args, **kwargs):
+            call_order.append("pool")
+            return _mock_pool()
+
+        with patch.object(database.asyncpg, "connect", AsyncMock(return_value=boot_conn)), \
+             patch.object(database.asyncpg, "create_pool", side_effect=fake_create_pool):
+            await database.create_pool("postgresql://example/fresh")
+
+        boot_conn.execute.assert_awaited_once_with("CREATE EXTENSION IF NOT EXISTS vector")
+        boot_conn.close.assert_awaited_once()
+        assert call_order == ["extension", "pool"]
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_failure_does_not_block_pool_creation(self):
+        """A permission error on CREATE EXTENSION is logged, not fatal."""
+        async def fake_create_pool(*args, **kwargs):
+            return _mock_pool()
+
+        with patch.object(database.asyncpg, "connect", AsyncMock(side_effect=RuntimeError("no perms"))), \
+             patch.object(database.asyncpg, "create_pool", side_effect=fake_create_pool):
+            pool = await database.create_pool("postgresql://example/fresh")
+
+        assert pool is not None

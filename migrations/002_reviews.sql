@@ -1,5 +1,5 @@
 -- Phase 2: Multi-Model Review System
--- Creates review and synthesis tables on the artifact_data tablespace
+-- Creates review and synthesis tables
 
 -- Individual model reviews (R2.1)
 CREATE TABLE reviews (
@@ -18,7 +18,7 @@ CREATE TABLE reviews (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) TABLESPACE artifact_data;
+);
 
 -- Synthesized review results (R2.2)
 CREATE TABLE review_syntheses (
@@ -35,7 +35,7 @@ CREATE TABLE review_syntheses (
     review_modes JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(job_id)
-) TABLESPACE artifact_data;
+);
 
 -- Indexes
 CREATE INDEX idx_reviews_artifact ON reviews(artifact_id);

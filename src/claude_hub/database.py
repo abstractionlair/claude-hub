@@ -38,6 +38,27 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
     await conn.execute("SET hnsw.ef_search = 64")
 
 
+async def _ensure_vector_extension(dsn: str) -> None:
+    """Create the pgvector extension if missing (fresh-database bootstrap).
+
+    The pool's per-connection init callback registers the pgvector type
+    codec, which fails on a database where the extension does not exist
+    yet — and migration 001 (which creates it) can only run once the pool
+    is up. Break the cycle by ensuring the extension on a plain
+    connection first. Best-effort: on an already-provisioned database
+    this is a no-op, and a permission failure here surfaces as the same
+    pool-creation error as before.
+    """
+    try:
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning("Could not ensure pgvector extension exists: %s", e)
+
+
 async def create_pool(dsn: str) -> asyncpg.Pool:
     """Create an asyncpg connection pool sized for a 4 GB VPS.
 
@@ -47,6 +68,8 @@ async def create_pool(dsn: str) -> asyncpg.Pool:
     Returns:
         A ready-to-use :class:`asyncpg.Pool`.
     """
+    await _ensure_vector_extension(dsn)
+
     pool = await asyncpg.create_pool(
         dsn,
         min_size=2,

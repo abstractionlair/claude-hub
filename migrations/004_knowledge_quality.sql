@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS artifact_feedback (
     agent_id TEXT NOT NULL DEFAULT 'main',
     content_version INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) TABLESPACE artifact_data;
+);
 
 -- Review quality grading (R5.5) — per-model signal
 CREATE TABLE IF NOT EXISTS review_grades (
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS review_grades (
     grade TEXT NOT NULL CHECK (grade IN ('EXCELLENT', 'ADEQUATE', 'INADEQUATE', 'HARMFUL')),
     note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) TABLESPACE artifact_data;
+);
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_artifact_feedback_artifact ON artifact_feedback(artifact_id);
