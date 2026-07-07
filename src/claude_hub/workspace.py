@@ -230,6 +230,14 @@ class WorkspaceManager:
         created_by: work/main/
         writers: [work/main/, work/main.research/]
         -->
+
+        Returns None if the file doesn't exist or carries no PERMISSIONS block.
+
+        Raises:
+            ValueError: If a PERMISSIONS block is present but malformed
+                (unterminated), or the file cannot be read/decoded. Callers
+                enforcing permissions must treat this as a denial (fail
+                closed), not as "no metadata".
         """
         full_path = self.projects_dir / project / "shared" / resource_path
         if not full_path.exists():
@@ -238,31 +246,42 @@ class WorkspaceManager:
         try:
             with open(full_path, 'r') as f:
                 content = f.read(1000)  # Read first 1000 chars
+        except Exception as e:
+            raise ValueError(f"Cannot read shared resource metadata: {e}") from e
 
-            # Extract metadata block
-            if content.startswith('<!-- PERMISSIONS'):
-                end = content.find('-->')
-                if end > 0:
-                    metadata_text = content[len('<!-- PERMISSIONS'):end]
-                    metadata = {}
-                    for line in metadata_text.strip().split('\n'):
-                        if ':' in line:
-                            key, value = line.split(':', 1)
-                            key = key.strip()
-                            value = value.strip()
-                            if key == 'writers' and value.startswith('['):
-                                # Parse list
-                                value = [v.strip().strip(',') for v in value.strip('[]').split()]
-                            metadata[key] = value
-                    return metadata
-        except Exception:
-            pass
+        # Extract metadata block
+        if content.startswith('<!-- PERMISSIONS'):
+            end = content.find('-->')
+            if end <= 0:
+                raise ValueError(
+                    "Malformed PERMISSIONS block (missing '-->' terminator)"
+                )
+            metadata_text = content[len('<!-- PERMISSIONS'):end]
+            metadata = {}
+            for line in metadata_text.strip().split('\n'):
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if key == 'writers' and value.startswith('['):
+                        # Parse list
+                        value = [v.strip().strip(',') for v in value.strip('[]').split()]
+                    metadata[key] = value
+            return metadata
 
         return None
 
     def can_write_shared(self, project: str, resource_path: str, requester_dir: str) -> bool:
-        """Check if requester can write to shared resource."""
-        metadata = self.get_shared_resource_metadata(project, resource_path)
+        """Check if requester can write to shared resource.
+
+        Fails closed: if the metadata exists but cannot be read or parsed,
+        write access is denied rather than defaulting to open.
+        """
+        try:
+            metadata = self.get_shared_resource_metadata(project, resource_path)
+        except Exception:
+            # Metadata present but unreadable/unparseable — deny.
+            return False
         if not metadata:
             # No metadata = anyone can write (for now)
             return True
