@@ -126,14 +126,20 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
+# PostgreSQL is required to run the server (not to run the tests).
+# The server connects at startup and will not start without a reachable
+# database; it applies migrations/*.sql itself on first start.
+# Requires the pgvector extension to be installed.
+createdb claude_hub
+export CLAUDE_HUB_PG_DSN="postgresql:///claude_hub"
+export CLAUDE_HUB_PROJECT_DIR="$PWD"   # where migrations/ and runtime state live
+
 # Start the server on localhost
 uvicorn claude_hub.server:app --host 127.0.0.1 --port 8420
 
-# Run tests
+# Run tests (no Postgres needed)
 pytest tests/ -v
 ```
-
-Most features require `CLAUDE_HUB_PG_DSN` to be set. Without Postgres, the `hub_*`, `files_*`, and GitHub tools still work.
 
 ---
 
