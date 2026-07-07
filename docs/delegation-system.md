@@ -5,11 +5,11 @@ The Claude Hub delegation system enables hierarchical agent orchestration with r
 ## Overview
 
 **Key Features:**
-- **Workspace isolation** - Each agent gets its own directory with permission controls
+- **Workspace directories** - Each agent gets its own directory following the naming convention below
 - **Resource constraints** - Deadline propagation and resource limits using min() pattern
 - **Scheduling** - Cron-like wake-ups for periodic tasks
 - **Handoff protocol** - Structured summaries from delegatees to parents
-- **Permissions** - Parent→child write access, child→parent read access
+- **Permission conventions** - Parent→child write access, child→parent read access (advisory; see below)
 
 ## Architecture
 
@@ -36,7 +36,7 @@ thoughts/projects/{project}/
 
 ### 1. Workspaces
 
-Each agent operates in an isolated workspace with explicit permissions:
+Each agent operates in its own workspace directory with explicit permission conventions:
 
 ```python
 # Create workspace for a child agent
@@ -56,6 +56,13 @@ workspace = await create_workspace(
 - Parent → child: read/write (can intervene)
 - Child → parent: read-only (can see context)
 - Siblings: no access (must use shared/)
+
+> **Enforcement status:** these rules are conventions for cooperating
+> agents, not an enforced security boundary. `PermissionChecker`
+> (`src/claude_hub/permissions.py`) implements the rules and the
+> shared-resource metadata check, but the server's `files_write` path does
+> not consult it — agents with file access can bypass the rules. Don't
+> rely on workspace permissions to contain untrusted code.
 
 ### 2. Resource Constraints
 

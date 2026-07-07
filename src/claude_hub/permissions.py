@@ -1,4 +1,10 @@
-"""Permission enforcement for workspace operations."""
+"""Permission checking for workspace operations.
+
+NOTE: PermissionChecker implements the workspace permission rules but is
+not wired into the server's file-write path. Workspace permissions are
+currently a convention for cooperating agents, not an enforced boundary —
+see docs/delegation-system.md.
+"""
 
 from pathlib import Path
 from typing import Optional
@@ -7,7 +13,7 @@ from .workspace import WorkspaceManager
 
 class PermissionChecker:
     """
-    Enforces permission rules for workspace access.
+    Checks permission rules for workspace access.
 
     Rules:
     1. Own directory: full control
@@ -116,30 +122,3 @@ class PermissionChecker:
 
         # Target must start with requester's name followed by "."
         return target_workspace.startswith(requester_workspace + ".")
-
-
-def enforce_permissions(func):
-    """
-    Decorator to enforce permissions on file operations.
-
-    Usage:
-        @enforce_permissions
-        def write_file(file_path: Path, content: str, requester_dir: str, project: str):
-            ...
-    """
-    def wrapper(*args, **kwargs):
-        # Extract parameters
-        file_path = kwargs.get('file_path') or args[0]
-        requester_dir = kwargs.get('requester_dir')
-        project = kwargs.get('project')
-        operation = kwargs.get('operation', 'write')
-
-        if not requester_dir or not project:
-            raise ValueError("requester_dir and project required for permission check")
-
-        # Check permission (would need workspace_manager instance)
-        # This is a placeholder - actual implementation would need dependency injection
-
-        return func(*args, **kwargs)
-
-    return wrapper
