@@ -135,7 +135,14 @@ def _atomic_write(path: Path, content: str) -> None:
 
 @contextmanager
 def _file_lock(path: Path):
-    """Advisory file lock using fcntl.flock."""
+    """Advisory file lock using fcntl.flock.
+
+    The lockfile is deliberately left in place after release. Unlinking it
+    while other processes are blocked in flock() on the same path is a
+    classic race: waiters wake holding a lock on the orphaned inode while
+    the next caller creates (and locks) a fresh file at the same path,
+    letting two holders into the critical section simultaneously.
+    """
     lock_path = path.with_suffix(path.suffix + ".lock")
     fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
     try:
@@ -144,10 +151,6 @@ def _file_lock(path: Path):
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
-        try:
-            os.unlink(lock_path)
-        except OSError:
-            pass
 
 
 def create_window(

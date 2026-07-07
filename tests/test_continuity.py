@@ -580,3 +580,51 @@ class TestCreateWindowCollision:
         base = fixed_ts.removesuffix(".md")
         assert second.name == f"{base}-1.md"
         assert third.name == f"{base}-2.md"
+
+
+# --- File locking ---
+
+
+class TestFileLock:
+    """_file_lock must exclude concurrent holders and keep a stable lockfile."""
+
+    def test_lockfile_persists_after_release(self, tmp_path: Path) -> None:
+        """Regression: the lockfile must NOT be unlinked on release.
+
+        Unlinking a lockfile that other processes may be blocked on lets a
+        later caller lock a fresh inode at the same path — two holders in
+        the critical section at once.
+        """
+        from claude_hub.continuity import _file_lock
+
+        target = tmp_path / "window.md"
+        with _file_lock(target):
+            pass
+        lock_path = target.with_suffix(target.suffix + ".lock")
+        assert lock_path.exists()
+
+    def test_lock_excludes_second_holder_on_same_inode(self, tmp_path: Path) -> None:
+        """While held, a second flock attempt on the same path must block."""
+        import fcntl
+        import os
+
+        from claude_hub.continuity import _file_lock
+
+        target = tmp_path / "window.md"
+        lock_path = target.with_suffix(target.suffix + ".lock")
+
+        with _file_lock(target):
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
+            try:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(fd)
+
+        # After release, the same path (same inode) is lockable again.
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
