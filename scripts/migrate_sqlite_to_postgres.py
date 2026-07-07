@@ -2,6 +2,7 @@
 """One-time migration: copy data from SQLite databases to PostgreSQL."""
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
