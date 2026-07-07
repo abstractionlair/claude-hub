@@ -233,7 +233,9 @@ class StorageManager:
             if not path:
                 for exclude_dir in self.SEARCH_EXCLUDE_DIRS:
                     cmd.extend(["--exclude-dir", exclude_dir])
-            cmd.extend([query, str(resolved)])
+            # -e marks the query as a pattern and -- ends option parsing, so a
+            # query starting with "-" can't be interpreted as a grep flag.
+            cmd.extend(["-e", query, "--", str(resolved)])
             proc = subprocess.run(
                 cmd,
                 capture_output=True,

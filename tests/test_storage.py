@@ -185,6 +185,21 @@ class TestSearchFiles:
         with pytest.raises(StorageError, match="Directory not found"):
             tmp_storage.search_files("query", path="nonexistent")
 
+    def test_search_query_starting_with_dash_is_literal(self, populated_storage):
+        # Regression: a query beginning with "-" must be passed to grep as a
+        # pattern (-e query --), not parsed as a grep option.
+        populated_storage.write_file("notes/flags.md", "grep uses --include for globs")
+        results = populated_storage.search_files("--include")
+        assert len(results) >= 1
+        assert any("flags.md" in r["file"] for r in results)
+
+    def test_search_query_dash_e_is_literal(self, populated_storage):
+        # "-e" as a query must not be swallowed as the pattern-flag itself.
+        populated_storage.write_file("notes/dash.md", "value: -e is a flag")
+        results = populated_storage.search_files("-e is a flag")
+        assert len(results) >= 1
+        assert any("dash.md" in r["file"] for r in results)
+
 
 # ---------------------------------------------------------------------------
 # StorageManager: Path Traversal Protection (CRITICAL)
