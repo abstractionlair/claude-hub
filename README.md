@@ -5,6 +5,7 @@ Personal AI infrastructure backbone — a persistent Claude Code backend plus th
 Chat sessions on claude.ai are stateless, single-model, and forget on restart. Claude-hub, via MCP, gives them access to a persistent, tool-equipped backend with durable memory, continuity, and multi-model review. The initial, simple idea was to allow Chat Claudes to trade messages with a Claude
 in a Claude Code session running on the server. No specialize tools would be needed; they could just talk. My thinking was that rather than a claude.ai conversation producing a runnable artifact within the chat app, it could spin up a full web app hosted on a permanent server. It grew from
 there.
+
 ---
 
 ## Headline features
