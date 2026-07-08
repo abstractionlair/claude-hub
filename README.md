@@ -2,17 +2,19 @@
 
 Personal AI infrastructure backbone — a persistent Claude Code backend plus the memory, continuity, review, and orchestration layers around it.
 
-Chat sessions are stateless, single-model, and forget on restart. Claude-hub gives any MCP client one authenticated front door to a persistent, tool-equipped backend with durable memory, continuity, and multi-model review. The scarce resource is not compute or data — it is context. *(The "context is the scarce resource" framing is Tyler Cowen's.)*
-
+Chat sessions on claude.ai are stateless, single-model, and forget on restart. Claude-hub, via MCP, gives them access to a persistent, tool-equipped backend with durable memory, continuity, and multi-model review. The initial, simple idea was to allow Chat Claudes to trade messages with a Claude
+in a Claude Code session running on the server. No specialize tools would be needed; they could just talk. My thinking was that rather than a claude.ai conversation producing a runnable artifact within the chat app, it could spin up a full web app hosted on a permanent server. It grew from
+there.
 ---
 
 ## Headline features
 
 ### Persistent Claude Code backend (`hub_*`)
 
-MCP tools `hub_init`, `hub_send`, `hub_poll`, and `hub_status` route Chat Claudes to a long-running Claude Code process that keeps working state, tools, and project context across messages. The session manager resumes existing sessions first, tracks token usage against a budget, and triggers a graceful restart when context is critical.
+MCP tools `hub_init`, `hub_send`, `hub_poll`, and `hub_status` transport messages between Chat Claudes and a long-running Claude Code process that 
+has the facilities of a well-equipped VPS. The session manager resumes existing sessions first, tracks token usage, and triggers a graceful restart when context is critical. 
 
-*Why:* Your chat client gets a stateful backend without re-explaining the project on every turn; work survives until the backend is intentionally restarted.
+*Why:* Your chat agent gets a stateful, permanent backend.
 
 ### Work Graph (`wg_*`)
 
