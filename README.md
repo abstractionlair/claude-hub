@@ -66,6 +66,8 @@ The idea here was to allow a Claude in Claude code to easily ask for an opinion 
 
 #### Multi-model review engine
 
+Infrastructure for getting reviews of code, mostly, but also of other artifacts by multiple models, synthesizing the reviews, grading them, and recording the grades to help in choosing which models to use going forward.
+
 **Plumbing.** Every review is a subprocess invocation of a model CLI --- `claude`, `codex`, historically `gemini` and `opencode`. There are no direct inference-API calls anywhere in the engine. (An Antigravity port would revive the Gemini seats; the `agy` binary is on the box but nothing is wired to it yet.) Each model runs in one of two modes: *agentic* --- it receives a prompt and explores the codebase itself --- or *bundled* --- the content under review is shipped to it in a temp file. Prompts are piped via stdin to dodge ARG_MAX, and each review's harness session ID is captured so the session can be resumed later.
 
 **Configuration.** `config/review_models.yaml` defines the roster generically: per model, an `invoke` argv template, the mode, timeouts and input-size caps, a `resume_cmd` for follow-ups, and a `grading_cmd`. Reviewers run in a clean room by default: files carrying editorial opinions (CLAUDE.md and friends) are excluded and reviewers are told to form their own. Adding or dropping a model is a yaml edit, not code.
