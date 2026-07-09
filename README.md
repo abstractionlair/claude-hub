@@ -1,6 +1,6 @@
 # claude-hub
 
-Claude Hub started as an MCP service running on a VPS which would allow a Claude at claude.ai to chat with a Claude in Claude Code running on the VPS with permissions to do things like stand up web apps. It was inspired, in part, by an experience in a claude.ai chat where Claude did a great job creating a simple web app as an artifact which then failed to allow full functionality because of CORS errors. The initial idea was that this could be very simple --- just allowing the two Claudes to chat in natural language. Both the VPS and the MCP service grew more functionality over time. This repo covers the service.
+Claude Hub started as an MCP service running on a VPS which would allow a Claude at claude.ai to chat with a Claude in Claude Code running on the VPS with permissions to do things like stand up web apps. It was inspired, in part, by an experience in a claude.ai chat where Claude did a great job creating a simple web app as an artifact which then failed to allow full functionality because of CORS errors. The initial idea was that this could be very simple --- just allowing the two Claudes to chat in natural language. Both the VPS and the MCP service grew more functionality over time. This repo covers the service (and non-service features it accrued over time), not the VPS.
 
 ---
 
@@ -8,19 +8,19 @@ Claude Hub started as an MCP service running on a VPS which would allow a Claude
 
 ### MCP tools
 
+Originally claude.ai was the only client of these. That's expanded to Claude Code and Codex, even when running on the same machine as the service. The utility to me is having (much of) the same context wherever I happen to be interacting with models.
+
 #### Persistent Claude Code backend (`hub_*`)
 
 MCP tools `hub_init`, `hub_send`, `hub_poll`, and `hub_status` transport messages between Chat Claudes and a long-running Claude Code process that
 has the facilities of a well-equipped VPS. The session manager resumes existing sessions first, tracks token usage (self-reported context markers, not metered), and triggers a graceful restart when context is critical. This was the initial purpose of claude-hub but it ended up less used than I'd expected. Once I had the VPS running, Claude Code, Codex, Gemini (at the time) installed and authorized, along with all the tools, libraries, ... that I could want, just logging in there and
 using Claude Code supplanted a lot of my use of the web chat interface.
 
-*Why:* Your chat agent gets a stateful, permanent backend.
-
 #### Artifact store (`artifact_*`)
 
 Semantic knowledge storage with `pgvector` embeddings, confidence levels (`HIGH`, `MEDIUM`, `LOW`, `SUPERSEDED`), Bayesian utility tracking from feedback, and age-based decay. `artifact_search` reranks by embedding similarity plus confidence, usage-utility, and recency; `artifact_retirement_candidates` finds low-utility artifacts for cleanup.
 
-*Why:* Knowledge rots if left alone; confidence, utility, and age decay keep the working memory relevant without manual curation.
+Getting less use than I expected, but not none.
 
 #### Work Graph (`wg_*`)
 
@@ -28,17 +28,19 @@ A DAG of the work on my plate: things I have committed to deliver, things I migh
 
 The graph itself lives in a separate internal service (see Architecture); the hub is its MCP gateway.
 
-*Why:* AI-speed delegation multiplies open threads faster than human memory holds them; work that leaves my attention should not leave my awareness.
+I'm finding this very useful. 
 
 #### Multi-model group chat (`group_*`)
 
 A shared room for humans, Claude, Codex, and Gemini. REST endpoints and WebSocket `/ws/group/{conversation_id}` add participants, stream messages, and persist history to Postgres. MCP tools `group_join`, `group_send`, `group_poll`, and `group_leave` let programmatic participants join the same room.
 
-*Why:* Models with different strengths can collaborate in one conversation instead of the operator copying context between separate chat windows.
+Note that this is different than the multi-model chat _app_ in a different repo. That calls inference APIs. This allows existing sessions with models to _join_ a chat. In addition to a page on the VPS's web page which will launch some sessions for you and open a window for chatting. I can do things like give a conversation ID to a Claude in Chrome so it can chat with a Claude in Claude Code which can look for data in other files, etc. It should also allow two Claudes in Chrome(s) in different workbooks to coordinate, though I haven't needed that yet.
 
 #### Supporting tools
 
 Fractal delegation (isolated workspaces, handoff documents, cron-like wake-ups via `schedule_*`), `files_*` persistent storage, `github_read_file`, `notify`, and connectors for federated search across artifact and filesystem sources.
+
+I still like this idea but didn't find myself using it after implementing. Agent team may cover this ground.
 
 ### Not exposed over MCP
 
@@ -57,6 +59,8 @@ These live in this repo because the VPS is where the work happened, but they ser
 #### Codex and Gemini stdio adapters
 
 `python3 -m claude_hub.codex_mcp` and `gemini_mcp` expose persistent Codex and Gemini conversations (`codex_send`, `gemini_send`, session listing and reset) as stdio MCP servers. They speak the MCP protocol, but they register with a local harness such as Claude Code --- they are not tools of the claude-hub service.
+
+The idea here was to allow a Claude in Claude code to easily ask for an opinion from Codex or Gemini. (The Gemini CLI is no more. This could be migrated to Antigravity.) The Multi-model review engine below, though, is what gets all the use now.
 
 ### Not MCP
 
