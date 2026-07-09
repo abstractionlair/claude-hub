@@ -1,6 +1,6 @@
 # claude-hub
 
-Claude Hub started as an MCP service running on a VPS which would allow a Claude at claude.ai to chat with a Claude in Claude Code running on the VPS with permissions to do things like stand up web apps. It was inspired, in part, by an experience in a claude.ai chat where Claude did a great job creating a simple web app as an artifact which then failed to allow full functionality because of CORS errors. The initial idea was that this could be very simple --- just allowing the two Claudes to chat in natural language. Both the VPS and the MCP service grew more funcionality over time. This repo covers the service.
+Claude Hub started as an MCP service running on a VPS which would allow a Claude at claude.ai to chat with a Claude in Claude Code running on the VPS with permissions to do things like stand up web apps. It was inspired, in part, by an experience in a claude.ai chat where Claude did a great job creating a simple web app as an artifact which then failed to allow full functionality because of CORS errors. The initial idea was that this could be very simple --- just allowing the two Claudes to chat in natural language. Both the VPS and the MCP service grew more functionality over time. This repo covers the service.
 
 ---
 
@@ -8,9 +8,9 @@ Claude Hub started as an MCP service running on a VPS which would allow a Claude
 
 ### Persistent Claude Code backend (`hub_*`)
 
-MCP tools `hub_init`, `hub_send`, `hub_poll`, and `hub_status` transport messages between Chat Claudes and a long-running Claude Code process that 
-has the facilities of a well-equipped VPS. The session manager resumes existing sessions first, tracks token usage, and triggers a graceful restart when context is critical. This was the initial purpose of claude-hub but it ended up less used than I'd expected. Once I had the VPS running, Claude Code, Codex, Gemini (at the time) installed and authorized, along with all the tools, libraries, ... that I could want, just logging in there and
-using Claude Code supplanted a lot of my use of the web chat interface. 
+MCP tools `hub_init`, `hub_send`, `hub_poll`, and `hub_status` transport messages between Chat Claudes and a long-running Claude Code process that
+has the facilities of a well-equipped VPS. The session manager resumes existing sessions first, tracks token usage (self-reported context markers, not metered), and triggers a graceful restart when context is critical. This was the initial purpose of claude-hub but it ended up less used than I'd expected. Once I had the VPS running, Claude Code, Codex, Gemini (at the time) installed and authorized, along with all the tools, libraries, ... that I could want, just logging in there and
+using Claude Code supplanted a lot of my use of the web chat interface.
 
 *Why:* Your chat agent gets a stateful, permanent backend.
 
@@ -22,22 +22,21 @@ Semantic knowledge storage with `pgvector` embeddings, confidence levels (`HIGH`
 
 ### Work Graph (`wg_*`)
 
-A provenance-by-construction graph of work-in-progress. `wg_capture` creates a node; parent-child edges are automatic, and cross-cutting `blocks`/`related` edges are explicit via `wg_add_dependency`. `wg_brief` returns a token-free, read-only prose brief so a fresh agent can orient itself in seconds. `wg_query`, `wg_search`, `wg_goto`, and `wg_update` provide structured navigation and lifecycle updates.
+A DAG of the work on my plate: things I have committed to deliver, things I might do, and things instrumentally required by the others --- not just work in progress. Its first job is keeping me oriented across many concurrent AI-assisted threads; models help maintain it and often execute from it. `wg_capture` creates a node; provenance parent-child edges are automatic, and cross-cutting `blocks`/`related` edges are explicit via `wg_add_dependency`. `wg_brief` returns a curated read-only prose brief so a fresh agent --- or I, coming back after a weekend --- can orient in seconds. `wg_query` (`overview`, `ready`, `recent`, `deferred`, `blocked`), `wg_search`, `wg_goto`, and `wg_update` cover navigation and lifecycle.
 
-*Why:* Context is bounded; a fresh agent can pick up exactly what is ready, blocked, deferred, or recent without reading the entire project history.
-
+*Why:* AI-speed delegation multiplies open threads faster than human memory holds them; work that leaves my attention should not leave my awareness.
 
 ### Multi-model review engine
 
-A review engine that dispatches a target to Claude, GPT-5/Codex, and Gemini, synthesizes their findings into a consensus report, surfaces contradictions, runs peer-reconciliation rounds, and grades each reviewer on a failure-mode taxonomy (`EXCELLENT`, `ADEQUATE`, `INADEQUATE`, `HARMFUL`; failure modes include `false_positive`, `false_negative`, `wrong_severity`, `hallucinated_evidence`, `credulous`, `shallow`). The model registry is configured in `config/review_models.yaml`.
+A registry-driven review engine that dispatches a target to the configured reviewer models --- the registry is `config/review_models.yaml`, currently holding two Claude, two Gemini, and one GPT seat --- synthesizes their findings into a consensus report, surfaces contradictions, runs peer-reconciliation rounds, and grades each reviewer on a failure-mode taxonomy (`EXCELLENT`, `ADEQUATE`, `INADEQUATE`, `HARMFUL`; failure modes include `false_positive`, `false_negative`, `wrong_severity`, `hallucinated_evidence`, `credulous`, `shallow`). The roster is curated by those grades: open-weight models (GLM, DeepSeek) held seats early on and lost them after poor review grades. A separate OpenCode/OpenRouter dispatch layer keeps other models (Qwen, Kimi, MiniMax, GLM) callable when wanted. Reviews run as a local CLI (`python3 -m claude_hub.review_cli`), deliberately not an HTTP/MCP tool, to avoid tool-call timeouts on long jobs.
 
-*Why:* Different models catch different things; a portfolio review plus explicit grading produces higher-confidence feedback than a single pass.
+*Why:* Different models catch different things; a graded portfolio review produces higher-confidence feedback than a single pass --- and the grades decide who keeps a seat.
 
 ### Window-file continuity
 
-Survives context-window exhaustion by narrating state, not summarizing it. When a session approaches its limit, a forked narrator writes a timestamped window file with YAML frontmatter, links it to a parent window, and resumes a fresh session that loads the chain. `continuity_ingest` feeds window content into the artifact store.
+One Markdown file per context-window era, written as contemporaneous commentary rather than a retrospective summary. When a session approaches its context limit, a forked narrator (`claude --fork-session --print`) writes the window file without consuming the main session's budget; YAML frontmatter links each window to its parent and children (the chain is DAG-shaped to accommodate forks), and the next session loads the chain. Unlike built-in compaction, which carries only the latest summary forward, the whole chain is retained and --- via `continuity_ingest` into the artifact store --- semantically searchable, so "what did we decide about X?" is answerable across sessions. The design is a deliberate compromise between raw-log completeness and searchability: window files are curated, persistent memory; session JSONL remains the raw ground truth.
 
-*Why:* A long project becomes a chain of fresh sessions instead of one compressed summary; the narrator captures the delta, not a lossy recap.
+*Why:* A long project becomes a searchable chain of fresh sessions instead of one compressed summary.
 
 ### Multi-model group chat (`group_*`)
 
@@ -48,6 +47,12 @@ A shared room for humans, Claude, Codex, and Gemini. REST endpoints and WebSocke
 ### Supporting infrastructure
 
 Fractal delegation (isolated workspaces, handoff documents, cron-like wake-ups via `schedule_*`), OAuth 2.1 + MCP gateway, connectors for federated search across artifact and filesystem sources, and `files_*`, GitHub, and notification tools.
+
+---
+
+## Tool surface
+
+The service exposes 50 MCP tools. [`docs/mcp-tools.md`](docs/mcp-tools.md) is the per-tool reference; [`docs/non-mcp-facilities.md`](docs/non-mcp-facilities.md) covers everything callable that is not in the MCP manifest --- the review and continuity CLIs, local stdio MCP adapters for Codex and Gemini, the web surfaces, maintenance scripts, and background tasks. Both documents were written by GPT-5.5 from the source and then verified claim-by-claim by Claude, including a set-diff of the documented tools against the live manifest.
 
 ---
 
@@ -75,26 +80,15 @@ A role is a harness-neutral job description, not an identity or persona. `docs/d
 
 ---
 
-## Window-file continuity
+## Status and limitations
 
-Continuity is implemented in `src/claude_hub/continuity.py` and `continuity_ingest.py`:
-
-- **Forked narrator.** A `claude --fork-session --print` invocation writes a window-file delta without consuming the main session's budget.
-- **Linked window chain.** Each window file has YAML frontmatter with `parent` and `children` references; `load_window_chain` follows the chain chronologically.
-- **Artifact ingest.** Window content is parsed and stored as artifacts so the semantic memory can answer "what did we decide about X?" across sessions.
-
-The system is designed around the principle that window files are curated, persistent memory and session JSONL is the raw ground truth.
-
----
-
-## Honest state
-
-This is a production-deployed personal system (see `deploy.yaml` and `scripts/services/`). The Python source is roughly 18k lines, and the test suite collects 638 tests. The project is spec-driven and uses a multi-model review engine; the engine is currently invoked as a CLI (`python -m claude_hub.review_cli`) rather than an automated CI gate.
+This is a production-deployed personal system (see `deploy.yaml` and `scripts/services/`). The Python source is roughly 18k lines, and the test suite collects 679 tests. The project is spec-driven; the review engine described above gates its own development, invoked as a CLI rather than an automated CI gate.
 
 Known rough edges, tracked openly:
 
 - **Continuity fork.** The session-ID remap after `claude --fork-session` can leave the `.current-<id>` pointer stale, so a fork may write to the wrong window or create a stray one. Every fork also reloads the full session context via `claude --resume --print`, which is heavy on long sessions. See `KNOWN_ISSUES.md` for the full diagnosis.
 - **Gemini integration.** Group chat and review drive Gemini by shelling out to the standalone `gemini` CLI, which Google has since retired in favor of Antigravity. The Gemini seat therefore fails to spawn until the launcher is ported to Antigravity's binary and session model; Claude and GPT-5/Codex are unaffected.
+- **MCP manifest over-exposure.** Tool registration uses an exclude-list, so two group-chat web routes (`add_codex_to_conversation`, `add_gemini_to_conversation`) currently leak into the MCP manifest. Diagnosed in `docs/mcp-tools.md`; the fix (switching to an explicit allowlist) is queued behind per-tool usage telemetry so the decision is made on data.
 - **Docs lag.** Some design docs still reference untracked `~/.claude` shell hooks and older ledger/append-log patterns that predate the artifact store and observation store.
 - **Single-operator model.** Auth protects the public surface, but there is no multi-tenancy or per-user isolation.
 
@@ -105,6 +99,8 @@ Known rough edges, tracked openly:
 | Area | Entry points |
 |---|---|
 | MCP gateway + tool routes | `src/claude_hub/server.py` |
+| MCP tool reference | `docs/mcp-tools.md` |
+| Non-MCP facilities reference | `docs/non-mcp-facilities.md` |
 | Persistent Claude backend | `src/claude_hub/session.py`, `chat_process.py`, `routing.py` |
 | Work graph integration | `src/claude_hub/work_graph_models.py`, forwarders in `server.py`; service runs separately at `127.0.0.1:8421` |
 | Multi-model review | `src/claude_hub/review_engine.py`, `review_cli.py`, `review_models.py`, `config/review_models.yaml` |
