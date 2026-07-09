@@ -40,7 +40,7 @@ Note that this is different than the multi-model chat _app_ in a different repo.
 
 Fractal delegation (isolated workspaces, handoff documents, cron-like wake-ups via `schedule_*`), `files_*` persistent storage, `github_read_file`, `notify`, and connectors for federated search across artifact and filesystem sources.
 
-I still like this idea but didn't find myself using it after implementing. Agent team may cover this ground.
+I still like this idea but didn't find myself using it after implementing. Agent teams may cover this ground.
 
 ### Not exposed over MCP
 
