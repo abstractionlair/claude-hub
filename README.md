@@ -1,10 +1,6 @@
 # claude-hub
 
-Personal AI infrastructure backbone — a persistent Claude Code backend plus the memory, continuity, review, and orchestration layers around it.
-
-Chat sessions on claude.ai are stateless, single-model, and forget on restart. Claude-hub, via MCP, gives them access to a persistent, tool-equipped backend with durable memory, continuity, and multi-model review. The initial, simple idea was to allow Chat Claudes to trade messages with a Claude
-in a Claude Code session running on the server. No specialized tools would be needed; they could just talk. My thinking was that rather than a claude.ai conversation producing a runnable artifact within the chat app, it could spin up a full web app hosted on a permanent server. It grew from
-there.
+Claude Hub started as an MCP service running on a VPS which would allow a Claude at claude.ai to chat with a Claude in Claude Code running on the VPS with permissions to do things like stand up web apps. It was inspired, in part, by an experience in a claude.ai chat where Claude did a great job creating a simple web app as an artifact which then failed to allow full functionality because of CORS errors. The initial idea was that this could be very simple --- just allowing the two Claudes to chat in natural language. Both the VPS and the MCP service grew more funcionality over time. This repo covers the service.
 
 ---
 
@@ -18,23 +14,24 @@ using Claude Code supplanted a lot of my use of the web chat interface.
 
 *Why:* Your chat agent gets a stateful, permanent backend.
 
+### Artifact store (`artifact_*`)
+
+Semantic knowledge storage with `pgvector` embeddings, confidence levels (`HIGH`, `MEDIUM`, `LOW`, `SUPERSEDED`), Bayesian utility tracking from feedback, and age-based decay. `artifact_search` reranks by embedding similarity plus confidence, usage-utility, and recency; `artifact_retirement_candidates` finds low-utility artifacts for cleanup.
+
+*Why:* Knowledge rots if left alone; confidence, utility, and age decay keep the working memory relevant without manual curation.
+
 ### Work Graph (`wg_*`)
 
 A provenance-by-construction graph of work-in-progress. `wg_capture` creates a node; parent-child edges are automatic, and cross-cutting `blocks`/`related` edges are explicit via `wg_add_dependency`. `wg_brief` returns a token-free, read-only prose brief so a fresh agent can orient itself in seconds. `wg_query`, `wg_search`, `wg_goto`, and `wg_update` provide structured navigation and lifecycle updates.
 
 *Why:* Context is bounded; a fresh agent can pick up exactly what is ready, blocked, deferred, or recent without reading the entire project history.
 
+
 ### Multi-model review engine
 
 A review engine that dispatches a target to Claude, GPT-5/Codex, and Gemini, synthesizes their findings into a consensus report, surfaces contradictions, runs peer-reconciliation rounds, and grades each reviewer on a failure-mode taxonomy (`EXCELLENT`, `ADEQUATE`, `INADEQUATE`, `HARMFUL`; failure modes include `false_positive`, `false_negative`, `wrong_severity`, `hallucinated_evidence`, `credulous`, `shallow`). The model registry is configured in `config/review_models.yaml`.
 
 *Why:* Different models catch different things; a portfolio review plus explicit grading produces higher-confidence feedback than a single pass.
-
-### Artifact store (`artifact_*`)
-
-Semantic knowledge storage with `pgvector` embeddings, confidence levels (`HIGH`, `MEDIUM`, `LOW`, `SUPERSEDED`), Bayesian utility tracking from feedback, and age-based decay. `artifact_search` reranks by embedding similarity plus confidence, usage-utility, and recency; `artifact_retirement_candidates` finds low-utility artifacts for cleanup.
-
-*Why:* Knowledge rots if left alone; confidence, utility, and age decay keep the working memory relevant without manual curation.
 
 ### Window-file continuity
 
