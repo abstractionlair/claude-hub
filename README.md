@@ -75,7 +75,7 @@ Every review is a subprocess invocation of a model CLI --- `claude`, `codex`, `a
 ##### Configuration
 `config/review_models.yaml` defines the roster generically: per model, an `invoke` argv template, the mode, timeouts and input-size caps, a `resume_cmd` for follow-ups, and a `grading_cmd`. Reviewers run in a clean room by default --- opinion isolation, not information deprivation. A reviewer reads everything a good review needs (the intent or spec, the code, the tests) but is asked not to read process preferences or design-rationale documents, which per the requirements doc "could create anchoring bias (where the reviewer echoes back assumptions instead of challenging them)". The boundary is intent (share it) versus editorial opinion (withhold it). And it is deliberately a soft boundary: an agentic reviewer could read anything, so the design (after debate, in the requirements doc's draft history) trades hard enforcement for review quality --- the acceptance criterion is verifiable prompt construction plus an audit trail (reviewers must report which files they read beyond the targets), not a proof of abstinence. The config reserves per-model `clean_room_flags` for hard enforcement once the CLIs support profiles. Adding or dropping a model is a yaml edit, not code.
 
-##### Pipeline.
+##### Pipeline
 A job fans out to every configured model as parallel async tasks, tracked as rows in Postgres. When the last review lands, a synthesizer model (itself a config knob) writes a consensus report: agreements, single-reviewer catches, contradictions, severities. When a job mixed modes, findings that came *only* from bundled reviewers are flagged: a reviewer that could not explore the repo cannot check its claims against it, so its unique findings carry extra false-positive risk. A second structured pass extracts the contradictions as data, and for each one the engine resumes the *original sessions* of the reviewers involved and asks each, anonymously, to concede or defend with evidence. Finally the reviewers themselves are graded --- `EXCELLENT`, `ADEQUATE`, `INADEQUATE`, `HARMFUL`, with a failure-mode taxonomy (`false_positive`, `false_negative`, `wrong_severity`, `hallucinated_evidence`, `credulous`, `shallow`, `no_output`) --- using the synthesis as an approximate answer key. Cross-grading policy: every grader grades every review for the first twenty jobs, again whenever contradictions surfaced, and on every fifth job; otherwise the synthesizer grades alone. The smaller Claude seat hands its grading duty to Opus; the commit message says why: "grading requires judgment, not just formatting."
 
 ##### Storage
@@ -86,9 +86,27 @@ The registry holds six seats: two Claude, two Gemini (via Antigravity's `agy` --
 
 #### Window-file continuity
 
-One Markdown file per context-window era, written as contemporaneous commentary rather than a retrospective summary. When a session approaches its context limit, a forked narrator (`claude --fork-session --print`) writes the window file without consuming the main session's budget; YAML frontmatter links each window to its parent and children (the chain is DAG-shaped to accommodate forks), and the next session loads the chain. Unlike built-in compaction, which carries only the latest summary forward, the whole chain is retained and --- via `continuity_ingest` into the artifact store --- semantically searchable, so "what did we decide about X?" is answerable across sessions. The design is a deliberate compromise between raw-log completeness and searchability: window files are curated, persistent memory; session JSONL remains the raw ground truth.
+Every long-running session ends the same way: the context window fills. The built-in answer, compaction, carries a single lossy summary forward and discards the previous one each time; the raw session JSONL keeps everything but is unreadable in practice and unsearchable in bulk. Window files are the layer between: one Markdown file per context-window era, written as contemporaneous commentary --- narrated while the session still knows *why*, not reconstructed after the fact.
 
-*Why:* A long project becomes a searchable chain of fresh sessions instead of one compressed summary.
+##### Mechanism
+
+Hook-driven, so no session has to remember to do it. As a session approaches its context limit --- and periodically along the way, roughly every 200k tokens of transcript --- a forked narrator (`claude --fork-session --print`) appends the era's delta to the current window file without consuming the main session's budget. YAML frontmatter links each window to its parent and children (chain-shaped in practice; the links are DAG-ready for forked sessions), and files route to `~/roles/$ROLE/windows/`, so each role accumulates its own lineage. A session-start hook loads the chain into the next session, and `continuity_ingest` feeds finalized windows into the artifact store, where they get embeddings.
+
+##### What it buys
+
+- **Fresh sessions start oriented, not amnesiac.** The chain is the onboarding document, and it was written by the sessions that lived the work. A new context window opens with the narrative of everything before it, at a cost of one file read.
+- **The whole history stays searchable --- not just the latest summary.** Compaction answers "what was I just doing?"; the ingested window chain answers "what did we decide about X?" weeks later, semantically.
+- **Operational knowledge survives session death.** Two examples from a single week of this repo's own history: the CLI incantation that revived the review engine's dead Gemini seats was recovered from a window file another session had written; the review grade that justified seating Grok 4.5 was found the same way. Neither fact lived anywhere else that a search would reach.
+- **Contemporaneous beats retrospective.** The narrator writes while the context is hot, so windows preserve reasoning, dead ends, and open threads --- exactly what an after-the-fact summary flattens. Reconstructing what one pre-window-era project had done took real archaeology across raw transcripts; anything from the window era is a search query instead.
+- **The narration is nearly free to the session that benefits from it.** The fork does the writing; the main session spends no output budget on its own memoir.
+
+##### Position in the memory stack
+
+Three layers, in increasing curation: session JSONL is the raw ground truth --- complete, kept, consulted when it matters, but not a working memory; window files are the curated persistent layer --- the deliberate compromise between raw-log completeness and searchability; the artifact store provides semantic recall over the result. Compaction still runs --- window files just stop it from being the *only* memory.
+
+##### Limits
+
+Tracked in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), which is this subsystem's own running log: the `--fork-session` session-ID remap can leave the narrator pointing at the wrong window (the main open fragility); each fork reloads the full session context to write a small delta, which is heavy on long sessions; and the `children` side of the frontmatter links is not yet exercised --- parent links are what carry the chain today.
 
 #### Role system
 
