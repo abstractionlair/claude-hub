@@ -114,7 +114,7 @@ Tracked in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), which is this subsystem's own r
 
 #### Role system
 
-A role is a harness-neutral job description, not an identity or persona. `docs/design/ontology.md` defines current roles such as `workbench`, `sysadmin`, and `mcp-server`. The model is a parameter of each conversation, so a role can swap between Claude Code, Codex, or Gemini while keeping the same responsibilities, scope, and accumulated context. Runtime code sets `CURRENT_ROLE` and routes window files to `~/roles/$ROLE/windows/` or the project-local `thoughts/windows/` fallback.
+Over time as I added packages, components, tools, services, ... to the VPS I wanted Claude Code or other harness sessions, in whatever project I was working in, to know about them. E.g. "We have a Postgres server.". And I also wanted information about workflow preferences, and various documentation either inserted into context or pointers inserted into context. And, finally, I wanted that to be customized to what I planned to do in the session. The `role` script is a launcher which is given a role name like 'sysadmin', or 'workbench' and launches a Claude Code or other harness session with my preferred setup. It also sents an environment variable which influences where window files are stored so that are grouped by role.
 
 ---
 
