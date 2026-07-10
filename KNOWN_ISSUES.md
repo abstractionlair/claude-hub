@@ -6,6 +6,28 @@ entries; pick up from a sysadmin/workbench session.
 
 ---
 
+## 2026-07-10 — fork cache probe: forks do NOT reuse the main session's cache
+
+Measured (one `claude --resume <id> --fork-session --print` against a live
+~410k-token session, `--output-format json` usage fields):
+cache_read 15,497 (the generic system/tools prefix only — cached by other `-p`
+calls, not by the session being forked); cache_creation 393,604 (1h tier) — the
+entire transcript re-uploaded as a fresh cache write; 29s wall; $7.97
+API-equivalent (subscription quota). The `-p` fork's context assembly diverges
+from the interactive session's cached prefix at the top, so prefix identity
+breaks and nothing of the conversation body cache-hits.
+
+Implications: (a) finding #4's cost is now quantified — ~$8 API-equivalent per
+narrator fork on a long session; (b) the write went to the 1-HOUR tier, and a
+later fork of the same session is a strict prefix-extension, so consecutive
+narrator forks within an hour should partially pay each other back (untested);
+(c) the improvement idea in #4 — feed the fork a recent transcript slice
+instead of full `--resume` — has a hard number attached. No prior record of
+this experiment exists on this box (it may have been run in Scott's work
+environment; nothing in windows, docs, memory, or the artifact store).
+
+---
+
 ## 2026-06-27 — window-system findings (from a coach session debugging a slow pre-compact)
 
 Investigated why a coach (Health & Fitness) pre-compact ran strangely long and found
