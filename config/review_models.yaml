@@ -82,13 +82,26 @@ models:
     resume_cmd: ["codex", "exec", "resume", "--json", "{session_id}", "-"]
     grading_cmd: ["codex", "exec", "-m", "gpt-5.4", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--json", "-"]
 
+  # Direct xAI via opencode's xai/ provider — draws Scott's PREPAID xAI credits,
+  # NOT the capped OpenCode Zen workspace (opencode/grok-* would). --agent plan
+  # avoids the coding-agent system prompt. Debut review graded EXCELLENT
+  # (job b030a8bb, 2026-07-09 panel). Positional {prompt}: opencode --file
+  # attachments hang (see 2026-03 fix); watch ARG_MAX via max_input_chars.
+  grok-4.5:
+    display_name: "Grok 4.5 (xAI, direct via opencode)"
+    mode: agentic
+    invoke: ["opencode", "run", "-m", "xai/grok-4.5", "--agent", "plan", "{prompt}"]
+    cost_tier: xai-prepaid-credits
+    max_input_chars: 200000
+    timeout_seconds: 900
+    clean_room_flags: []
+
   # --- Audition queue (paused until the opencode spending cap resets, ~2026-08) ---
   # Candidates with positive ad-hoc evidence, to be seated and GRADED before keeping:
   #   glm-5.2        (opencode) — "impressive for its cost" in July side work
-  #   grok-4.5       (opencode, xAI provider, --agent plan) — debut review graded
-  #                  EXCELLENT in job b030a8bb (2026-07-09 panel)
   #   deepseek-v4-*  — clean fast delegation-pilot execution 2026-07-05; no review grade yet
   #   minimax (latest) — no recent evidence found; mine review_grades before seating
+  # (grok-4.5 seated 2026-07-10 — direct xAI credits are not behind the Zen cap.)
   # Work-graph node tracks this. GPT models: NEVER via opencode — codex only (cost).
 
   # --- Dropped models (2026-03-31) ---
