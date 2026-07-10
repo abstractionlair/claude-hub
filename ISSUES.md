@@ -9,10 +9,11 @@ here are repo-wide.
   window or create a stray one. Every fork also reloads the full session
   context via `claude --resume --print`, which is heavy on long sessions. See
   [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) for the full diagnosis.
-- **Gemini integration.** Group chat and review drive Gemini by shelling out
-  to the standalone `gemini` CLI, which Google has since retired in favor of
-  Antigravity. The Gemini seat therefore fails to spawn until the launcher is
-  ported to Antigravity's binary and session model; Claude and GPT-5/Codex are
+- **Gemini integration (partial).** The review engine's Gemini seats run via
+  Antigravity's `agy` CLI as of 2026-07-10 (display-name model IDs required;
+  slug forms silently serve Flash). Group chat (`GeminiChat`) and the gemini
+  stdio adapter still shell out to the standalone `gemini` CLI, which Google
+  retired --- those fail to spawn until ported; Claude and GPT-5/Codex are
   unaffected.
 - **MCP manifest over-exposure.** Tool registration uses an exclude-list, so
   two group-chat web routes (`add_codex_to_conversation`,

@@ -140,7 +140,7 @@ class ProcessLauncher:
 
     Args:
         profiles: Registry of ModelProfiles keyed by "{provider}/{model_id}".
-            If None, loads the default set from multi-model-registry.md.
+            If None, uses the built-in default profiles below.
     """
 
     def __init__(self, profiles: dict[str, ModelProfile] | None = None):

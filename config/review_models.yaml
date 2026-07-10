@@ -25,7 +25,7 @@ models:
     clean_room_flags: []  # --profile not yet available in Claude CLI
     session_id_format: claude
     resume_cmd: ["claude", "--session-id", "{session_id}", "--output-format", "json", "-p", "-"]
-    grading_cmd: ["claude", "--model", "opus", "--output-format", "json", "--allowedTools", "", "--bare", "-p", "-"]
+    grading_cmd: ["claude", "--model", "opus", "--output-format", "json", "--allowedTools", "", "-p", "-"]
 
   claude-sonnet-4.6:
     display_name: "Claude Sonnet 4.6 (Anthropic)"
@@ -38,33 +38,36 @@ models:
     clean_room_flags: []
     session_id_format: claude
     resume_cmd: ["claude", "--session-id", "{session_id}", "--output-format", "json", "-p", "-"]
-    grading_cmd: ["claude", "--model", "opus", "--output-format", "json", "--allowedTools", "", "--bare", "-p", "-"]
+    grading_cmd: ["claude", "--model", "opus", "--output-format", "json", "--allowedTools", "", "-p", "-"]
 
+  # Gemini seats run via Antigravity's `agy` CLI (Google retired the standalone
+  # gemini CLI). CRITICAL: --model takes DISPLAY-NAME form ("Gemini 3.1 Pro (High)");
+  # slug forms (gemini-3.1-pro) are SILENTLY ignored and serve Flash. Verified
+  # 2026-07-09 with an identity probe (work-graph chmm-6). Default --print-timeout
+  # is 5m, which kills real agentic reviews — set explicitly. No session-id capture
+  # yet (agy output is plain text), so peer follow-up marks agy seats unresolved.
   gemini-3.1-pro:
-    display_name: "Gemini 3.1 Pro (Google)"
+    display_name: "Gemini 3.1 Pro (Google, via Antigravity)"
     mode: agentic
-    invoke: ["gemini", "-m", "gemini-3.1-pro-preview", "-o", "json", "--include-directories", "/tmp"]
+    invoke: ["agy", "-p", "Follow the review instructions provided via stdin.", "--model", "Gemini 3.1 Pro (High)", "--add-dir", "/tmp", "--sandbox", "--dangerously-skip-permissions", "--print-timeout", "40m"]
     stdin_prompt: true
     cost_tier: subscription
     max_input_chars: 2000000
-    timeout_seconds: 600
+    timeout_seconds: 2700
     clean_room_flags: []
-    session_id_format: gemini
-    resume_cmd: ["gemini", "--resume", "{session_id}", "-o", "json", "-p", "-"]
-    grading_cmd: ["gemini", "-m", "gemini-3.1-pro-preview", "-o", "json", "-p", "-"]
+    grading_cmd: ["agy", "-p", "Follow the grading instructions provided via stdin.", "--model", "Gemini 3.1 Pro (High)", "--print-timeout", "15m"]
 
-  gemini-3-flash:
-    display_name: "Gemini 3 Flash (Google)"
+  # Flash seat upgraded: agy serves 3.5 Flash; the 3-series flash is gone.
+  gemini-3.5-flash:
+    display_name: "Gemini 3.5 Flash (Google, via Antigravity)"
     mode: agentic
-    invoke: ["gemini", "-m", "gemini-3-flash-preview", "-o", "json", "--include-directories", "/tmp"]
+    invoke: ["agy", "-p", "Follow the review instructions provided via stdin.", "--model", "Gemini 3.5 Flash (High)", "--add-dir", "/tmp", "--sandbox", "--dangerously-skip-permissions", "--print-timeout", "30m"]
     stdin_prompt: true
     cost_tier: subscription
     max_input_chars: 1000000
-    timeout_seconds: 600
+    timeout_seconds: 2000
     clean_room_flags: []
-    session_id_format: gemini
-    resume_cmd: ["gemini", "--resume", "{session_id}", "-o", "json", "-p", "-"]
-    grading_cmd: ["gemini", "-m", "gemini-3-flash-preview", "-o", "json", "-p", "-"]
+    grading_cmd: ["agy", "-p", "Follow the grading instructions provided via stdin.", "--model", "Gemini 3.5 Flash (High)", "--print-timeout", "15m"]
 
   gpt-5.4:
     display_name: "GPT-5.4 (via Codex)"
@@ -78,6 +81,15 @@ models:
     session_id_format: codex
     resume_cmd: ["codex", "exec", "resume", "--json", "{session_id}", "-"]
     grading_cmd: ["codex", "exec", "-m", "gpt-5.4", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--json", "-"]
+
+  # --- Audition queue (paused until the opencode spending cap resets, ~2026-08) ---
+  # Candidates with positive ad-hoc evidence, to be seated and GRADED before keeping:
+  #   glm-5.2        (opencode) — "impressive for its cost" in July side work
+  #   grok-4.5       (opencode, xAI provider, --agent plan) — debut review graded
+  #                  EXCELLENT in job b030a8bb (2026-07-09 panel)
+  #   deepseek-v4-*  — clean fast delegation-pilot execution 2026-07-05; no review grade yet
+  #   minimax (latest) — no recent evidence found; mine review_grades before seating
+  # Work-graph node tracks this. GPT models: NEVER via opencode — codex only (cost).
 
   # --- Dropped models (2026-03-31) ---
   # Review grades showed 0-67% pass rates with false negatives and HARMFUL grades.
