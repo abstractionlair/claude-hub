@@ -1,6 +1,8 @@
 # Non-MCP Facility Reference
 
-Last audited: 2026-07-09.
+Last audited: 2026-07-09. Written by GPT-5.5 (Codex) from the source;
+verified against the source by Claude the same day (file existence,
+commands, flags, and sampled behavioral claims).
 
 This document describes callable or operational facilities in this repo that
 are not part of the claude-hub network MCP tool manifest documented in

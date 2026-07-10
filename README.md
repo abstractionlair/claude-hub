@@ -8,7 +8,7 @@ Claude Hub started as an MCP service running on a VPS which would allow a Claude
 
 ### MCP tools
 
-Originally claude.ai was the only client of these. That's expanded to Claude Code and Codex, even when running on the same machine as the service. The utility to me is having (much of) the same context wherever I happen to be interacting with models.
+Originally claude.ai was the only client of these. That's expanded to Claude Code and Codex, even when running on the same machine as the service. The utility to me is having (much of) the same context wherever I happen to be interacting with models. The full per-tool reference is [`docs/mcp-tools.md`](docs/mcp-tools.md); [`docs/non-mcp-facilities.md`](docs/non-mcp-facilities.md) covers everything callable that is not in the MCP manifest.
 
 #### Persistent Claude Code backend (`hub_*`)
 
@@ -114,13 +114,7 @@ Tracked in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), which is this subsystem's own r
 
 #### Role system
 
-Over time as I added packages, components, tools, services, ... to the VPS I wanted Claude Code or other harness sessions, in whatever project I was working in, to know about them. E.g. "We have a Postgres server.". And I also wanted information about workflow preferences, and various documentation either inserted into context or pointers inserted into context. And, finally, I wanted that to be customized to what I planned to do in the session. The `role` script is a launcher which is given a role name like 'sysadmin', or 'workbench' and launches a Claude Code or other harness session with my preferred setup. It also sents an environment variable which influences where window files are stored so that are grouped by role.
-
----
-
-## Tool surface
-
-The service exposes 50 MCP tools. [`docs/mcp-tools.md`](docs/mcp-tools.md) is the per-tool reference; [`docs/non-mcp-facilities.md`](docs/non-mcp-facilities.md) covers everything callable that is not in the MCP manifest --- the review and continuity CLIs, local stdio MCP adapters for Codex and Gemini, the web surfaces, maintenance scripts, and background tasks. Both documents were written by GPT-5.5 from the source and then verified claim-by-claim by Claude, including a set-diff of the documented tools against the live manifest.
+Over time as I added packages, components, tools, services, ... to the VPS I wanted Claude Code or other harness sessions, in whatever project I was working in, to know about them. E.g. "We have a Postgres server.". And I also wanted information about workflow preferences, and various documentation either inserted into context or pointers inserted into context. And, finally, I wanted that to be customized to what I planned to do in the session. The `role` script is a launcher which is given a role name like 'sysadmin', or 'workbench' and launches a Claude Code or other harness session with my preferred setup. It also sets an environment variable which influences where window files are stored so they are grouped by role.
 
 ---
 

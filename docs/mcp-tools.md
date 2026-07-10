@@ -1,6 +1,8 @@
 # MCP Tool Reference
 
-Last audited: 2026-07-09.
+Last audited: 2026-07-09. Written by GPT-5.5 (Codex) from the source;
+verified claim-by-claim by Claude the same day, including a set-diff of the
+documented tools against the live manifest.
 
 This document describes the MCP tools exposed by the `claude-hub` FastAPI
 service. The current manifest is generated in `src/claude_hub/server.py` by
