@@ -157,6 +157,7 @@ def create_window(
     session_id: str,
     harness: str = "claude-code",
     parent: str | None = None,
+    projects: list[str] | None = None,
 ) -> Path:
     """Create a new window file with YAML frontmatter.
 
@@ -164,6 +165,7 @@ def create_window(
         session_id: The session identifier.
         harness: Harness name (used for fallback path under thoughts/windows/).
         parent: Parent window filename or relative path, or None for root windows.
+        projects: Project tags to record in the new window.
 
     Returns:
         Path to the created window file.
@@ -187,7 +189,7 @@ def create_window(
         "session_id": session_id,
         "harness": harness,
         "role": os.environ.get("CURRENT_ROLE", ""),
-        "projects": [],
+        "projects": projects or [],
         "workstream": "",
         "component": "",
         "service": "",
@@ -200,7 +202,7 @@ def create_window(
 
     # Create .current-{session_id} pointer file
     pointer = directory / f".current-{session_id}"
-    pointer.write_text(filename)
+    _atomic_write(pointer, filepath.name + "\n")
 
     # Link to parent if provided
     if parent is not None:
@@ -252,6 +254,29 @@ def link_child(parent_path: Path, child_path: Path) -> None:
         metadata["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         _atomic_write(parent_path, _serialize_frontmatter(metadata) + body)
+
+
+def append_window(path: Path, content: str) -> bool:
+    """Append narrative content to an active window atomically.
+
+    Finalized windows are immutable: returning ``False`` lets lifecycle hooks
+    tolerate a late Stop event without writing into the preceding context
+    epoch after compaction has already advanced its pointer.
+    """
+    if not path.is_file() or not content.strip():
+        return False
+
+    with _file_lock(path):
+        text = path.read_text()
+        metadata, body = _parse_frontmatter(text)
+        if str(metadata.get("finalized", "false")).lower() == "true":
+            return False
+
+        metadata["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        separator = "" if not body.strip() else "\n\n"
+        updated_body = body.rstrip() + separator + content.strip() + "\n"
+        _atomic_write(path, _serialize_frontmatter(metadata) + updated_body)
+    return True
 
 
 def find_current_window(
@@ -510,6 +535,32 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # create command
+    create_parser = subparsers.add_parser("create", help="Create a window file")
+    create_parser.add_argument("--session-id", required=True, help="Session identifier")
+    create_parser.add_argument(
+        "--harness",
+        default="claude-code",
+        help="Harness name (default: claude-code)",
+    )
+    create_parser.add_argument(
+        "--parent",
+        default=None,
+        help="Known originating window filename or relative path",
+    )
+    create_parser.add_argument(
+        "--project",
+        action="append",
+        default=[],
+        help="Project tag to record (repeatable)",
+    )
+
+    # append command
+    append_parser = subparsers.add_parser(
+        "append", help="Append stdin to an active window file"
+    )
+    append_parser.add_argument("--file", required=True, help="Window file path")
+
     # load-chain command
     chain_parser = subparsers.add_parser("load-chain", help="Load a window file chain")
     chain_parser.add_argument("path", type=str, help="Path to the window file")
@@ -565,7 +616,19 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "load-chain":
+    if args.command == "create":
+        result = create_window(
+            session_id=args.session_id,
+            harness=args.harness,
+            parent=args.parent,
+            projects=args.project,
+        )
+        print(result)
+    elif args.command == "append":
+        success = append_window(Path(args.file), sys.stdin.read())
+        if not success:
+            sys.exit(1)
+    elif args.command == "load-chain":
         if args.selective:
             result = load_selective_chain(
                 Path(args.path), depth=args.depth, full_depth=args.full_depth

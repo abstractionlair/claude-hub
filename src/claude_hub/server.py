@@ -433,9 +433,16 @@ class MCPAuthMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and is_oauth21_enabled():
+        if scope["type"] == "http":
             path = scope.get("path", "")
-            if path.startswith("/mcp"):
+            # Usage telemetry: FastApiMCP re-dispatches every MCP tool call as an
+            # internal ASGI request to /tools/<name>, which re-enters this middleware
+            # (uvicorn's access log only records the outer "POST /mcp", never the
+            # tool name). One INFO line per call yields a per-tool usage histogram in
+            # journald: journalctl -u claude-hub | grep mcp_tool_call | ...
+            if path.startswith("/tools/"):
+                logger.info("mcp_tool_call %s", path[len("/tools/") :])
+            if is_oauth21_enabled() and path.startswith("/mcp"):
                 # Check for Bearer token in headers
                 headers = dict(scope.get("headers", []))
                 auth = headers.get(b"authorization", b"").decode()
@@ -476,7 +483,7 @@ async def protected_resource_metadata():
     Tells MCP clients that this resource requires authentication
     and where to find the authorization server.
     """
-    base_url = BASE_URL
+    base_url = "https://claude-hub.abstractionlair.xyz"
     return {
         "resource": base_url,
         "authorization_servers": [base_url],
@@ -492,7 +499,7 @@ async def oauth_metadata():
 
     Allows MCP clients to discover OAuth endpoints.
     """
-    base_url = BASE_URL
+    base_url = "https://claude-hub.abstractionlair.xyz"
 
     return {
         "issuer": base_url,
@@ -2722,7 +2729,8 @@ async def group_poll(
 
     Returns all pending messages since your last poll — chat messages from
     other participants, Claude responses, and join/leave notifications.
-    Call periodically (every 2-3 seconds) to stay up to date.
+    By default this returns immediately. Set wait_seconds (0..30) to long-poll
+    when no messages are currently queued.
 
     This is for multi-participant group conversations (group_join/group_send).
     For simple request-response with Main Claude, use hub_poll instead.
@@ -2750,7 +2758,7 @@ async def group_poll(
             detail=f"Participant {params.participant_id} has no poll queue",
         )
 
-    # Drain the queue
+    # Drain the queue immediately, preserving the existing fast path.
     messages = []
     while True:
         try:
@@ -2758,6 +2766,24 @@ async def group_poll(
             messages.append(msg)
         except asyncio.QueueEmpty:
             break
+
+    if not messages and params.wait_seconds > 0:
+        try:
+            msg = await asyncio.wait_for(
+                participant.poll_queue.get(),
+                timeout=params.wait_seconds,
+            )
+            messages.append(msg)
+        except asyncio.TimeoutError:
+            pass
+
+        # Drain any follow-up messages that arrived with the first one.
+        while True:
+            try:
+                msg = participant.poll_queue.get_nowait()
+                messages.append(msg)
+            except asyncio.QueueEmpty:
+                break
 
     return GroupPollResponse(messages=messages)
 
@@ -3365,7 +3391,8 @@ async def wg_query(
 ) -> WgQueryResponse:
     """Run a structural query against the graph. Result shape varies by the `type` parameter —
     see WgQueryParams.type for the five allowed values and their meanings, and WgQueryResponse
-    for the per-type result shapes."""
+    for the per-type result shapes. No session_token is required; omitting it makes this a
+    read-only query that does not touch session state."""
     require_auth(client)
     return await _forward_to_wg("/tools/wg_query", params.model_dump())
 
@@ -3410,12 +3437,14 @@ async def wg_update(
     params: WgUpdateParams,
     client: str = Depends(get_current_client),
 ) -> WgUpdateResponse:
-    """Update a node's text and/or status. At least one of `text`, `status` must be supplied.
+    """Update a node's text, status, and/or notes. At least one of `text`, `status`, or
+    `notes` must be supplied.
 
     Status lifecycle: 'captured' (default at creation, deferred work) → 'in-progress' (active work)
     → 'done' (completed) | "won't-do" (decided not to do). Transitions are unconstrained — any
     status can move to any other. Setting status to 'done' or "won't-do" sets the node's `resolved`
-    timestamp; moving back to 'captured' or 'in-progress' clears it."""
+    timestamp; moving back to 'captured' or 'in-progress' clears it. Notes can be replaced or
+    cleared with an empty string."""
     require_auth(client)
     return await _forward_to_wg("/tools/wg_update", params.model_dump())
 
@@ -3556,6 +3585,8 @@ mcp = FastApiMCP(
         "create_conversation",
         "delete_conversation",
         "get_conversation_messages",
+        "add_codex_to_conversation",
+        "add_gemini_to_conversation",
         # OAuth endpoints (used by auth flow, not MCP tools)
         "protected_resource_metadata",
         "oauth_metadata__well_known_oauth_authorization_server_get",

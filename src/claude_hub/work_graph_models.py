@@ -22,7 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class WgSessionStartParams(BaseModel):
     """Parameters for wg_session_start (none required)."""
-    pass
+
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class WgBriefParams(BaseModel):
@@ -103,6 +104,8 @@ class WgCaptureParams(BaseModel):
 
 
 class WgGotoParams(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     session_token: str = Field(..., description="Token from wg_session_start.")
     node_id: str = Field(
         ...,
@@ -111,11 +114,18 @@ class WgGotoParams(BaseModel):
 
 
 class WgStatusParams(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     session_token: str = Field(..., description="Token from wg_session_start.")
 
 
 class WgQueryParams(BaseModel):
-    session_token: str = Field(..., description="Token from wg_session_start.")
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    session_token: Optional[str] = Field(
+        default=None,
+        description="Optional token from wg_session_start. Omit for a read-only query that does not touch session state.",
+    )
     type: str = Field(
         ...,
         description=(
@@ -138,6 +148,8 @@ class WgQueryParams(BaseModel):
 
 
 class WgSearchParams(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     text: str = Field(
         ...,
         description="Substring to find in node text. Case-insensitive. Empty result is valid (returns []), not an error.",
@@ -151,6 +163,8 @@ class WgAddDependencyParams(BaseModel):
     structure) are created automatically by wg_capture; cross-cutting
     edges between nodes in different subtrees use this tool.
     """
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     from_id: str = Field(..., description="Source node ID.")
     to_id: str = Field(..., description="Target node ID.")
     type: str = Field(
@@ -166,12 +180,14 @@ class WgAddDependencyParams(BaseModel):
 class WgUpdateParams(BaseModel):
     """Parameters for wg_update.
 
-    At least one of `text` or `status` must be provided. The status
+    At least one of `text`, `status`, or `notes` must be provided. The status
     lifecycle is: 'captured' (default at creation) → 'in-progress' →
     'done' or \"won't-do\". Setting status to 'done' or \"won't-do\"
     sets a `resolved` timestamp on the node; setting it back clears
     the timestamp.
     """
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     node_id: str = Field(..., description="ID of the node to update.")
     text: Optional[str] = Field(
         default=None,
@@ -183,6 +199,10 @@ class WgUpdateParams(BaseModel):
             "New status. Allowed values: 'captured', 'in-progress', 'done', \"won't-do\". "
             "Omit or null to leave unchanged."
         ),
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="New notes/context. Omit or null to leave unchanged; use an empty string to clear notes.",
     )
 
 

@@ -112,6 +112,12 @@ class GroupSendResponse(BaseModel):
 class GroupPollRequest(BaseModel):
     """Request to poll for new group messages."""
     participant_id: str
+    wait_seconds: float = Field(
+        default=0,
+        ge=0,
+        le=30,
+        description="If no messages are queued, wait up to this many seconds for one to arrive before returning.",
+    )
 
 class GroupPollResponse(BaseModel):
     """Response with pending group messages."""

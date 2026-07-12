@@ -41,11 +41,11 @@ Tracked via beads or similar task management.
 
 ### Window Files
 
-Context continuity via linked window file chain:
+Context continuity via linked window files:
 - Context window = working memory (ephemeral)
 - Window files = long-term memory (persistent)
 
-Rather than summarizing (lossy), save state to window file and restart fresh. Window files are timestamped markdown with YAML frontmatter, linked via parent pointers into a traversable chain.
+Rather than relying only on a lossy compaction summary, save state to a window file and start the successor context with that state. Window files are timestamped markdown with YAML frontmatter. A continuing session forms a traversable parent chain; independent sessions remain separate roots in the role-scoped forest.
 
 ## Composition pattern
 
