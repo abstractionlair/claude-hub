@@ -1,0 +1,3 @@
+# claude-hub PG DSN in the initial public commit (2026-07-05), replaced with an env-var reference in the next commit; the database credential was rotated 2026-07-13 and is inactive. No live secret present. (ni-22)
+# Not flagged by gitleaks' default ruleset (no bare postgres/DSN connection-string rule); documented here for audit-trail completeness per SECURITY.md's "known historical finding" commitment.
+# Location: commit 9c9426e7b120ae7112de998895042f72c1285d0e, scripts/migrate_sqlite_to_postgres.py:11
