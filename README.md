@@ -2,6 +2,8 @@
 
 Claude Hub started as an MCP service running on a VPS which would allow a Claude at claude.ai to chat with a Claude in Claude Code running on the VPS with permissions to do things like stand up web apps. It was inspired, in part, by an experience in a claude.ai chat where Claude did a great job creating a simple web app as an artifact which then failed to allow full functionality because of CORS errors. The initial idea was that this could be very simple --- just allowing the two Claudes to chat in natural language. Both the VPS and the MCP service grew more functionality over time. This repo covers the service (and non-service features it accrued over time), not the VPS.
 
+*See [PROVENANCE.md](PROVENANCE.md) for this repo's public-release date and real project timeframe.*
+
 ---
 
 ## Things that really belong here
