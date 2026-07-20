@@ -12,18 +12,13 @@ handler code.
 
 ## Manifest Caveat
 
-The current live manifest exposes 50 tools. Most are backed by `POST /tools/*`
-endpoints. Two entries are currently exposed from web API routes instead:
-
-- `add_codex_to_conversation`
-- `add_gemini_to_conversation`
-
-These are probably accidental MCP exposure. They live under
-`/api/conversations/{conversation_id}/...`, while sibling
-`add_claude_to_conversation` is explicitly excluded from the MCP manifest.
-The intended long-term fix is to switch MCP registration to an explicit
-`include_operations` allowlist, or at least add those two operation IDs to the
-exclusion list.
+Update 2026-07-10: the two accidentally exposed web routes
+(`add_codex_to_conversation`, `add_gemini_to_conversation`) are now excluded
+from the manifest (commit 081045c, with a regression test), so the live
+manifest exposes 48 tools, all backed by `POST /tools/*` endpoints. Their
+table entries below are kept for reference as web-API routes. The remaining
+long-term fix is switching MCP registration from the exclude-list to an
+explicit `include_operations` allowlist (work-graph schm-0).
 
 ## Core Hub Relay
 

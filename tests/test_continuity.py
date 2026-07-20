@@ -10,6 +10,7 @@ import pytest
 from claude_hub.continuity import (
     _parse_frontmatter,
     _serialize_frontmatter,
+    append_window,
     create_window,
     finalize_window,
     find_current_window,
@@ -109,13 +110,48 @@ class TestCreateWindow:
         parent_meta, _ = _parse_frontmatter(parent_path.read_text())
         assert child_path.name in parent_meta["children"]
 
+    def test_same_second_collision_pointer_uses_suffixed_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "claude_hub.continuity._timestamp_filename",
+            lambda: "2026-07-12T19-30-00Z.md",
+        )
+
+        first = create_window("session-first")
+        second = create_window("session-second")
+
+        assert first.name == "2026-07-12T19-30-00Z.md"
+        assert second.name == "2026-07-12T19-30-00Z-1.md"
+        assert (second.parent / ".current-session-second").read_text().strip() == second.name
+
     def test_create_window_custom_harness(self, tmp_path: Path) -> None:
         """Creates window in custom harness directory."""
-        path = create_window("session-x", harness="gemini")
+        path = create_window("session-x", harness="gemini", projects=["example-project"])
 
         assert path.parent == tmp_path / "thoughts" / "windows" / "gemini"
         meta, _ = _parse_frontmatter(path.read_text())
         assert meta["harness"] == "gemini"
+        assert meta["projects"] == ["example-project"]
+
+
+class TestAppendWindow:
+    def test_append_updates_body_and_timestamp(self) -> None:
+        path = create_window("session-append")
+        before, _ = _parse_frontmatter(path.read_text())
+
+        assert append_window(path, "## Turn update\n\nCompleted the test.")
+
+        after, body = _parse_frontmatter(path.read_text())
+        assert "Completed the test." in body
+        assert after["updated"] >= before["updated"]
+
+    def test_append_refuses_finalized_window(self) -> None:
+        path = create_window("session-finalized")
+        assert finalize_window(path)
+
+        assert not append_window(path, "late content")
+        assert "late content" not in path.read_text()
 
 
 # --- link_child ---

@@ -455,9 +455,13 @@ class ProcessLauncher:
 
         work_dir = working_dir or Path.cwd()
 
-        # Build clean environment
+        # Build clean environment. CURRENT_ROLE / ROLE_LAUNCHED_INTERACTIVE are
+        # stripped because these are fresh, non-interactive CLI sessions — left
+        # inherited they arm the SessionStart continuity hooks and create junk
+        # roots in the role's window corpus.
         env = {k: v for k, v in os.environ.items()
-               if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
+               if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+                             "CURRENT_ROLE", "ROLE_LAUNCHED_INTERACTIVE")}
 
         process = await asyncio.create_subprocess_exec(
             *cmd,

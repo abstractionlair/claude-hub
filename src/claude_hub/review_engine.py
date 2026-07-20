@@ -35,8 +35,13 @@ logger = logging.getLogger(__name__)
 # CLAUDECODE: prevents Claude CLI from refusing to run inside Claude Code.
 # GEMINI_API_KEY: forces gemini CLI to use subscription auth instead of
 #   pay-per-use API key (the key, if present, takes precedence).
+# CURRENT_ROLE / ROLE_LAUNCHED_INTERACTIVE: these dispatch subprocesses are
+#   fresh, non-interactive `-p` sessions, not the interactive role session.
+#   Left inherited, they arm the SessionStart continuity hooks, which create
+#   real pointer + window-file scaffolding for a session nobody will ever
+#   look at, polluting the role's window corpus for the next real session.
 # ---------------------------------------------------------------------------
-_STRIP_ENV_VARS = {"CLAUDECODE", "GEMINI_API_KEY"}
+_STRIP_ENV_VARS = {"CLAUDECODE", "GEMINI_API_KEY", "CURRENT_ROLE", "ROLE_LAUNCHED_INTERACTIVE"}
 
 # ---------------------------------------------------------------------------
 # Module-level model registry (loaded once at startup)
