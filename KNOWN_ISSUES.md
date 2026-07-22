@@ -6,43 +6,6 @@ entries; pick up from a sysadmin/workbench session.
 
 ---
 
-## 2026-07-20 — Reviewer grading is consensus-scored, not ground-truth-scored
-
-The multi-model review engine's grading (`review_engine.py`,
-`config/review_models.yaml`) uses the panel's own synthesis as the answer key
-for grading reviewers, not an independent ground truth. That means a grade
-partly measures agreement with the other reviewers rather than correctness:
-sound for catching a shallow or non-responsive review, unreliable for telling
-a wrong finding from a correct minority one that only one reviewer caught.
-This was the practical thing to build at the time — running six models past
-each other and needing some rubric for a roster call — and it is not as good
-as it should be. It still has real positive value: the resulting graded
-history exists and has informed real roster decisions, and grades have never
-been the sole gate on those decisions — they're one input a human weighs.
-
-The full mechanism (synthesis-as-answer-key, the toolless grader, the failure
-chain for a lone correct catch, and why three separate discounts stack against
-minority findings) is in
-[`docs/design/notes-review-grading-consensus-problem.md`](docs/design/notes-review-grading-consensus-problem.md).
-That note also names a structural risk worth stating plainly: every decision
-checkpoint in the loop — the synthesizer, the default grader, two of six
-roster seats, and the instance that drafts drop recommendations — currently
-runs through one model lineage. That's a risk in the mechanism's structure,
-not a demonstrated bias in outcomes: every model dropped so far happens to be
-non-Anthropic, but so is the entire audition queue, and that's confounded with
-capability tier — on its own it isn't evidence either way. Six ranked
-improvement options, from a roughly-one-hour grader-tools fix to a
-git-history backtest against real fix commits (the recommended one), are in
-[`docs/design/notes-review-grading-improvement-options.md`](docs/design/notes-review-grading-improvement-options.md).
-
-This consensus-weighted grading is an operational mechanism of the hub, not
-the methodology of the review-diversity research — the research pre-registers
-real, manually verified bug-fix pairs as ground truth. See
-[the review-diversity post](https://writingcommitmentdevice.substack.com/p/are-two-models-better-than-one-for)
-(published 2026-06-16, predating this disclosure).
-
----
-
 ## 2026-07-10 — fork cache probe: forks do NOT reuse the main session's cache
 
 Measured (one `claude --resume <id> --fork-session --print` against a live

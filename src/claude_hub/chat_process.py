@@ -33,6 +33,8 @@ import os
 import shutil
 import subprocess
 import uuid
+
+from .subprocess_env import scrub_model_subprocess_secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -145,8 +147,9 @@ class ChatProcessManager:
         if work_dir != self.project_dir:
             cmd.extend(["--add-dir", str(self.project_dir)])
 
-        # Build clean environment (unset CLAUDECODE to allow nested spawning)
-        env = {k: v for k, v in os.environ.items()
+        # Build clean environment: strip the service's secrets (the model child
+        # never needs them) and unset CLAUDECODE to allow nested spawning.
+        env = {k: v for k, v in scrub_model_subprocess_secrets().items()
                if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
         env["HOME"] = str(Path.home())
         env["CURRENT_ROLE"] = "mcp-server"

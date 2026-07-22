@@ -21,8 +21,19 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from claude_hub.auth import require_auth
-from claude_hub.server import app
-from claude_hub.work_graph_models import WgBriefParams, WgBriefResponse, WgCaptureParams
+from claude_hub.server import app, wg_query, wg_update
+from claude_hub.work_graph_models import (
+    WgAddDependencyParams,
+    WgBriefParams,
+    WgBriefResponse,
+    WgCaptureParams,
+    WgGotoParams,
+    WgQueryParams,
+    WgSearchParams,
+    WgSessionStartParams,
+    WgStatusParams,
+    WgUpdateParams,
+)
 
 # The exact reauthorization sentence the spec/brief require in 401 bodies.
 REAUTH_SENTENCE = (
@@ -45,6 +56,8 @@ _CAP_OK = {
 }
 
 _BRIEF_OK = {"brief": "## Workstreams (0)\n", "message": "0 workstreams — 0 in progress, 0 blocked, 0 deferred"}
+
+_QUERY_OK = {"results": [], "message": "0 workstream(s) in overview."}
 
 
 def _route_description(path: str) -> str:
@@ -177,6 +190,49 @@ class TestWgBriefParamsIncludeNotes:
     def test_wrong_type_rejected(self):
         with pytest.raises(ValidationError):
             WgBriefParams(include_notes="true")
+
+
+class TestStrictWgParams:
+    """Pre-wg-002 request models reject unknown fields and type coercion."""
+
+    @pytest.mark.parametrize(
+        "model,kwargs",
+        [
+            (WgSessionStartParams, {}),
+            (WgGotoParams, {"session_token": "tok-1", "node_id": "abc-0"}),
+            (WgStatusParams, {"session_token": "tok-1"}),
+            (WgQueryParams, {"type": "overview"}),
+            (WgSearchParams, {"text": "needle"}),
+            (WgAddDependencyParams, {"from_id": "a-0", "to_id": "b-0", "type": "related"}),
+            (WgUpdateParams, {"node_id": "a-0", "status": "done"}),
+        ],
+    )
+    def test_unknown_fields_rejected(self, model, kwargs):
+        with pytest.raises(ValidationError):
+            model(**kwargs, unexpected=1)
+
+    @pytest.mark.parametrize(
+        "model,kwargs",
+        [
+            (WgGotoParams, {"session_token": 123, "node_id": "abc-0"}),
+            (WgStatusParams, {"session_token": 123}),
+            (WgQueryParams, {"type": "recent", "days": "7"}),
+            (WgSearchParams, {"text": 123}),
+            (WgAddDependencyParams, {"from_id": "a-0", "to_id": "b-0", "type": 123}),
+            (WgUpdateParams, {"node_id": "a-0", "status": 123}),
+        ],
+    )
+    def test_wrong_types_rejected(self, model, kwargs):
+        with pytest.raises(ValidationError):
+            model(**kwargs)
+
+    def test_wg_query_session_token_optional(self):
+        p = WgQueryParams(type="overview")
+        assert p.model_dump()["session_token"] is None
+
+    def test_wg_update_accepts_notes(self):
+        p = WgUpdateParams(node_id="a-0", notes="")
+        assert p.model_dump()["notes"] == ""
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -374,6 +430,35 @@ class TestWgCaptureRoute:
             r = client.post("/tools/wg_capture", json={"text": "x", "root": "true"})
         assert r.status_code == 422
         fw.assert_not_awaited()
+
+
+class TestWgForwarderHandlers:
+    """Handler-level forwarding checks that avoid the hanging TestClient harness."""
+
+    @pytest.mark.asyncio
+    async def test_tokenless_query_forwarded(self):
+        with patch("claude_hub.server._forward_to_wg", new_callable=AsyncMock, return_value=_QUERY_OK) as fw:
+            response = await wg_query(WgQueryParams(type="overview"), client=None)
+        assert response == _QUERY_OK
+        assert fw.call_args.args[0] == "/tools/wg_query"
+        assert fw.call_args.args[1]["session_token"] is None
+        assert fw.call_args.args[1]["type"] == "overview"
+
+    @pytest.mark.asyncio
+    async def test_update_notes_forwarded(self):
+        response_payload = {
+            **_CAP_OK,
+            "node": {**_CAP_OK["node"], "notes": "new context"},
+            "message": "Updated.",
+        }
+        with patch("claude_hub.server._forward_to_wg", new_callable=AsyncMock, return_value=response_payload) as fw:
+            response = await wg_update(
+                WgUpdateParams(node_id="tst-0", notes="new context"),
+                client=None,
+            )
+        assert response == response_payload
+        assert fw.call_args.args[0] == "/tools/wg_update"
+        assert fw.call_args.args[1]["notes"] == "new context"
 
 
 # ═══════════════════════════════════════════════════════════════════════

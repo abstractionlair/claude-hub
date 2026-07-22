@@ -209,6 +209,32 @@
             <button onclick="window.close()">Close</button>
         </div>
     </div>
+    {% elif needs_totp %}
+    <div class="container">
+        <div class="header">
+            <h1>Claude Hub</h1>
+            <p>Verify it's you to authorize <strong>{{ client_name or "this client" }}</strong></p>
+        </div>
+        {% if totp_error %}
+        <p style="color: var(--accent); text-align: center; margin-bottom: 16px;">{{ totp_error }}</p>
+        {% endif %}
+        <form method="POST" action="/authorize/verify">
+            <input type="hidden" name="response_type" value="{{ response_type or 'code' }}">
+            <input type="hidden" name="client_id" value="{{ client_id }}">
+            <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+            <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+            <input type="hidden" name="code_challenge_method" value="{{ code_challenge_method }}">
+            <input type="hidden" name="scope" value="{{ scope }}">
+            <input type="hidden" name="state" value="{{ state or '' }}">
+            <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+                   pattern="[0-9]*" maxlength="6" placeholder="6-digit code" autofocus
+                   style="width:100%; padding:14px; font-size:18px; text-align:center; letter-spacing:4px; border-radius:8px; border:1px solid var(--border); background:var(--input-bg); color:var(--text); margin-bottom:16px;">
+            <button type="submit" class="btn-approve" style="width:100%;">Verify</button>
+        </form>
+        {% if totp_remaining is not none %}
+        <p class="redirect-notice">Attempts remaining: {{ totp_remaining }}</p>
+        {% endif %}
+    </div>
     {% else %}
     <div class="container">
         <div class="header">
@@ -258,6 +284,7 @@
 
         <div class="buttons">
             <form method="POST" action="/authorize/consent">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="client_id" value="{{ client_id }}">
                 <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
                 <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
@@ -269,6 +296,7 @@
             </form>
 
             <form method="POST" action="/authorize/consent">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="client_id" value="{{ client_id }}">
                 <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
                 <input type="hidden" name="code_challenge" value="{{ code_challenge }}">

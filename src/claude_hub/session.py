@@ -11,6 +11,7 @@ from typing import Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .subprocess_env import scrub_model_subprocess_secrets
 from .observations import (
     ObservationStore,
     parse_observation_markers,
@@ -234,7 +235,7 @@ class SessionManager:
             timeout=300,  # 5 minute timeout
             cwd=str(self.project_dir),  # Run from project dir for hooks
             env={
-                **os.environ,
+                **scrub_model_subprocess_secrets(),
                 "HOME": str(Path.home()),
                 "CURRENT_ROLE": "mcp-server",
             }

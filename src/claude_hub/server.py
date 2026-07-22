@@ -433,13 +433,27 @@ class MCPAuthMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and is_oauth21_enabled():
+        if scope["type"] == "http":
             path = scope.get("path", "")
-            if path.startswith("/mcp"):
+            # Usage telemetry: FastApiMCP re-dispatches every MCP tool call as an
+            # internal ASGI request to /tools/<name>, which re-enters this middleware
+            # (uvicorn's access log only records the outer "POST /mcp", never the
+            # tool name). One INFO line per call yields a per-tool usage histogram in
+            # journald: journalctl -u claude-hub | grep mcp_tool_call | ...
+            if path.startswith("/tools/"):
+                logger.info("mcp_tool_call %s", path[len("/tools/") :])
+            if is_oauth21_enabled() and path.startswith("/mcp"):
                 # Check for Bearer token in headers
                 headers = dict(scope.get("headers", []))
                 auth = headers.get(b"authorization", b"").decode()
-                if not auth.lower().startswith("bearer "):
+                # M1: verify the JWT here, before the MCP app initializes a session.
+                # Previously this only checked the "bearer " prefix, so a well-formed
+                # but invalid/expired token could create an MCP session and enumerate
+                # tools before the per-tool dependency rejected it. verify_token is the
+                # same check the tool dependency already applies, so valid tokens are
+                # unaffected — only tokens that can't call tools anyway are rejected early.
+                token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+                if not token or verify_token(token) is None:
                     # Return 401 directly without touching the app
                     body = b'{"detail":"Authentication required"}'
                     www_auth = f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource"'
@@ -476,7 +490,7 @@ async def protected_resource_metadata():
     Tells MCP clients that this resource requires authentication
     and where to find the authorization server.
     """
-    base_url = BASE_URL
+    base_url = "https://claude-hub.abstractionlair.xyz"
     return {
         "resource": base_url,
         "authorization_servers": [base_url],
@@ -492,7 +506,7 @@ async def oauth_metadata():
 
     Allows MCP clients to discover OAuth endpoints.
     """
-    base_url = BASE_URL
+    base_url = "https://claude-hub.abstractionlair.xyz"
 
     return {
         "issuer": base_url,
@@ -608,25 +622,52 @@ async def authorize(
     if len(redirect_uri_display) > 50:
         redirect_uri_display = redirect_uri_display[:47] + "..."
 
-    # Show consent page
-    return templates.TemplateResponse(
-        request,
-        "authorize.html",
-        context={
-            "client_id": client_id,
-            "client_name": client.client_name,
-            "redirect_uri": redirect_uri,
-            "redirect_uri_display": redirect_uri_display,
-            "code_challenge": code_challenge,
-            "code_challenge_method": code_challenge_method,
-            "scope": scope,
-            "state": state,
-        },
-    )
+    # Owner authentication gate (C1): only the resource owner may approve an
+    # authorization. The request is valid; require a fresh owner TOTP session
+    # before showing consent, otherwise prompt for a code carrying the request.
+    context = {
+        "response_type": response_type,
+        "client_id": client_id,
+        "client_name": client.client_name,
+        "redirect_uri": redirect_uri,
+        "redirect_uri_display": redirect_uri_display,
+        "code_challenge": code_challenge,
+        "code_challenge_method": code_challenge_method,
+        "scope": scope,
+        "state": state,
+    }
+
+    if not totp_manager.is_enrolled(TERMINAL_USER):
+        # Fail closed: with no owner enrolled, nobody can approve.
+        return templates.TemplateResponse(
+            request,
+            "authorize.html",
+            context={
+                "error": "owner_not_enrolled",
+                "error_description": (
+                    "Owner authentication is not set up. Enroll TOTP at "
+                    "/terminal/setup before authorizing clients."
+                ),
+            },
+        )
+
+    owner_session = _authorize_owner_session(request)
+    if not owner_session:
+        # Prompt for the owner's TOTP code, carrying the request forward.
+        context["needs_totp"] = True
+        context["totp_remaining"] = totp_manager.get_remaining_attempts(
+            get_client_ip(request)
+        )
+        return templates.TemplateResponse(request, "authorize.html", context=context)
+
+    # Owner authenticated — show the consent page with a session-bound CSRF token.
+    context["csrf_token"] = _authorize_csrf_token(owner_session.session_id)
+    return templates.TemplateResponse(request, "authorize.html", context=context)
 
 
 @app.post("/authorize/consent")
 async def authorize_consent(
+    request: Request,
     client_id: str = Form(...),
     redirect_uri: str = Form(...),
     code_challenge: str = Form(...),
@@ -634,6 +675,7 @@ async def authorize_consent(
     scope: str = Form("mcp"),
     state: str = Form(""),
     action: str = Form(...),
+    csrf_token: str = Form(""),
 ):
     """
     Handle consent form submission.
@@ -645,6 +687,16 @@ async def authorize_consent(
             status_code=503,
             detail="OAuth 2.1 not configured.",
         )
+
+    # Owner authentication gate (C1): consent requires a valid owner TOTP session
+    # and a matching, session-bound CSRF token. Without both, no code is minted.
+    owner_session = _authorize_owner_session(request)
+    if not owner_session:
+        raise HTTPException(status_code=403, detail="Owner authentication required.")
+    if not hmac.compare_digest(
+        csrf_token, _authorize_csrf_token(owner_session.session_id)
+    ):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token.")
 
     # Validate redirect_uri again (defense in depth)
     if not oauth_store.validate_redirect_uri(client_id, redirect_uri):
@@ -676,6 +728,77 @@ async def authorize_consent(
         params["state"] = state_value
 
     return RedirectResponse(f"{redirect_uri}?{urlencode(params)}", status_code=303)
+
+
+@app.post("/authorize/verify")
+async def authorize_verify(
+    request: Request,
+    code: str = Form(...),
+    response_type: str = Form("code"),
+    client_id: str = Form(...),
+    redirect_uri: str = Form(...),
+    code_challenge: str = Form(...),
+    code_challenge_method: str = Form("S256"),
+    scope: str = Form("mcp"),
+    state: str = Form(""),
+):
+    """
+    Verify the owner's TOTP code for an in-flight authorization request (C1).
+
+    On success, establish an owner session cookie and return to /authorize with the
+    original request parameters so the consent page can render.
+    """
+    if not is_oauth21_enabled():
+        raise HTTPException(status_code=503, detail="OAuth 2.1 not configured.")
+
+    client_ip = get_client_ip(request)
+    if not totp_manager.verify_code(TERMINAL_USER, code, client_ip):
+        remaining = totp_manager.get_remaining_attempts(client_ip)
+        client = oauth_store.get_client(client_id)
+        return templates.TemplateResponse(
+            request,
+            "authorize.html",
+            context={
+                "needs_totp": True,
+                "totp_error": (
+                    "Invalid code. Please try again."
+                    if remaining
+                    else "Too many attempts. Please wait a minute."
+                ),
+                "totp_remaining": remaining,
+                "response_type": response_type,
+                "client_id": client_id,
+                "client_name": client.client_name if client else client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": code_challenge_method,
+                "scope": scope,
+                "state": state,
+            },
+        )
+
+    session = totp_store.create_session(TERMINAL_USER)
+    params = {
+        "response_type": response_type,
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "code_challenge": code_challenge,
+        "code_challenge_method": code_challenge_method,
+        "scope": scope,
+    }
+    if state:
+        params["state"] = state
+    response = RedirectResponse(f"/authorize?{urlencode(params)}", status_code=303)
+    response.set_cookie(
+        key=AUTHORIZE_SESSION_COOKIE,
+        value=session.session_id,
+        max_age=AUTHORIZE_SESSION_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/authorize",
+    )
+    return response
 
 
 @app.post("/token")
@@ -2081,6 +2204,8 @@ async def websocket_chat(websocket: WebSocket):
 TERMINAL_USER = os.environ.get("HUB_TERMINAL_USER", "admin")
 TERMINAL_SESSION_COOKIE = "terminal_session"
 NOTIFICATIONS_SESSION_COOKIE = "notifications_session"
+AUTHORIZE_SESSION_COOKIE = "authorize_session"
+AUTHORIZE_SESSION_MAX_AGE = 8 * 60 * 60  # 8h — owner re-verifies TOTP at most this often
 
 
 def get_client_ip(request: Request) -> str:
@@ -2097,6 +2222,21 @@ def get_client_ip(request: Request) -> str:
 def get_terminal_session(request: Request) -> Optional[str]:
     """Get terminal session ID from cookie."""
     return request.cookies.get(TERMINAL_SESSION_COOKIE)
+
+
+def _authorize_owner_session(request: Request):
+    """Return the valid owner TOTP session for the authorize flow, or None."""
+    session_id = request.cookies.get(AUTHORIZE_SESSION_COOKIE)
+    if not session_id:
+        return None
+    return totp_store.verify_session(session_id)
+
+
+def _authorize_csrf_token(session_id: str) -> str:
+    """CSRF token bound to an owner session (stateless HMAC over the session id)."""
+    return hmac.new(
+        JWT_SECRET.encode(), f"authorize-csrf:{session_id}".encode(), hashlib.sha256
+    ).hexdigest()
 
 
 def get_notifications_session(request: Request) -> Optional[str]:
@@ -2722,7 +2862,8 @@ async def group_poll(
 
     Returns all pending messages since your last poll — chat messages from
     other participants, Claude responses, and join/leave notifications.
-    Call periodically (every 2-3 seconds) to stay up to date.
+    By default this returns immediately. Set wait_seconds (0..30) to long-poll
+    when no messages are currently queued.
 
     This is for multi-participant group conversations (group_join/group_send).
     For simple request-response with Main Claude, use hub_poll instead.
@@ -2750,7 +2891,7 @@ async def group_poll(
             detail=f"Participant {params.participant_id} has no poll queue",
         )
 
-    # Drain the queue
+    # Drain the queue immediately, preserving the existing fast path.
     messages = []
     while True:
         try:
@@ -2758,6 +2899,24 @@ async def group_poll(
             messages.append(msg)
         except asyncio.QueueEmpty:
             break
+
+    if not messages and params.wait_seconds > 0:
+        try:
+            msg = await asyncio.wait_for(
+                participant.poll_queue.get(),
+                timeout=params.wait_seconds,
+            )
+            messages.append(msg)
+        except asyncio.TimeoutError:
+            pass
+
+        # Drain any follow-up messages that arrived with the first one.
+        while True:
+            try:
+                msg = participant.poll_queue.get_nowait()
+                messages.append(msg)
+            except asyncio.QueueEmpty:
+                break
 
     return GroupPollResponse(messages=messages)
 
@@ -3365,7 +3524,8 @@ async def wg_query(
 ) -> WgQueryResponse:
     """Run a structural query against the graph. Result shape varies by the `type` parameter —
     see WgQueryParams.type for the five allowed values and their meanings, and WgQueryResponse
-    for the per-type result shapes."""
+    for the per-type result shapes. No session_token is required; omitting it makes this a
+    read-only query that does not touch session state."""
     require_auth(client)
     return await _forward_to_wg("/tools/wg_query", params.model_dump())
 
@@ -3410,12 +3570,14 @@ async def wg_update(
     params: WgUpdateParams,
     client: str = Depends(get_current_client),
 ) -> WgUpdateResponse:
-    """Update a node's text and/or status. At least one of `text`, `status` must be supplied.
+    """Update a node's text, status, and/or notes. At least one of `text`, `status`, or
+    `notes` must be supplied.
 
     Status lifecycle: 'captured' (default at creation, deferred work) → 'in-progress' (active work)
     → 'done' (completed) | "won't-do" (decided not to do). Transitions are unconstrained — any
     status can move to any other. Setting status to 'done' or "won't-do" sets the node's `resolved`
-    timestamp; moving back to 'captured' or 'in-progress' clears it."""
+    timestamp; moving back to 'captured' or 'in-progress' clears it. Notes can be replaced or
+    cleared with an empty string."""
     require_auth(client)
     return await _forward_to_wg("/tools/wg_update", params.model_dump())
 
@@ -3556,12 +3718,15 @@ mcp = FastApiMCP(
         "create_conversation",
         "delete_conversation",
         "get_conversation_messages",
+        "add_codex_to_conversation",
+        "add_gemini_to_conversation",
         # OAuth endpoints (used by auth flow, not MCP tools)
         "protected_resource_metadata",
         "oauth_metadata__well_known_oauth_authorization_server_get",
         "register_client_register_post",
         "authorize_authorize_get",
         "authorize_consent_authorize_consent_post",
+        "authorize_verify_authorize_verify_post",
         "token_endpoint_token_post",
         # Debug/health endpoints
         "health_health_get",

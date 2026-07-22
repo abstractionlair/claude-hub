@@ -18,6 +18,8 @@ import asyncio
 import json
 from dataclasses import dataclass
 
+from .subprocess_env import scrub_model_subprocess_secrets
+
 
 @dataclass
 class GeminiChat:
@@ -39,6 +41,7 @@ class GeminiChat:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self.cwd,
+            env=scrub_model_subprocess_secrets(),
         )
         try:
             stdout, stderr = await asyncio.wait_for(
