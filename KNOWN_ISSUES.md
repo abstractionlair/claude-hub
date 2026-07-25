@@ -23,7 +23,7 @@ later fork of the same session is a strict prefix-extension, so consecutive
 narrator forks within an hour should partially pay each other back (untested);
 (c) the improvement idea in #4 — feed the fork a recent transcript slice
 instead of full `--resume` — has a hard number attached. No prior record of
-this experiment exists on this box (it may have been run in Scott's work
+this experiment exists on this box (it may have been run in a different
 environment; nothing in windows, docs, memory, or the artifact store).
 
 ---

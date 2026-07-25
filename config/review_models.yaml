@@ -82,7 +82,7 @@ models:
     resume_cmd: ["codex", "exec", "resume", "--json", "{session_id}", "-"]
     grading_cmd: ["codex", "exec", "-m", "gpt-5.4", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--json", "-"]
 
-  # Direct xAI via opencode's xai/ provider — draws Scott's PREPAID xAI credits,
+  # Direct xAI via opencode's xai/ provider — draws the operator's PREPAID xAI credits,
   # NOT the capped OpenCode Zen workspace (opencode/grok-* would). --agent plan
   # avoids the coding-agent system prompt. Debut review graded EXCELLENT
   # (job b030a8bb, 2026-07-09 panel). Positional {prompt}: opencode --file

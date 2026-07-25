@@ -89,7 +89,7 @@ Four checkpoints, one lineage:
 - default grader after cycle 20: synthesizer-only, so `claude`
 - 2 of 6 roster seats: Claude
 - the instance that notices "this model is underperforming" and writes the drop
-  recommendation to Scott: also Claude
+  recommendation to the operator: also Claude
 
 A model that reviews *differently* is marked down at every stage. Additionally,
 the instance writing the recommendation is the author of the code that model
@@ -122,7 +122,7 @@ the next outlier look worse.
 **Main mitigation:** roster changes are human-decided. `review_models.yaml` is
 hand-edited with prose rationale; nothing auto-drops a model. The actual process
 is that a working instance notices a problem during real work, raises it,
-Scott and the instance discuss and verify, and Scott decides — usually on a
+The operator and the instance discuss and verify, and the operator decides — usually on a
 recommendation. The working instance has ground truth access (it holds the code,
 spec, and test results), so that recommendation is better-grounded than anything
 in `review_grades`. But see the monoculture section: the loop's inputs are near

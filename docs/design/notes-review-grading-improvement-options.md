@@ -7,7 +7,7 @@ read first for the mechanism and severity assessment).
 
 ## Constraint
 
-Assume neither Scott nor any human manually reviews all reviews or all code.
+Assume no human manually reviews all reviews or all code.
 Any option requiring per-finding human adjudication is out of scope.
 
 ## The reframe
@@ -99,7 +99,7 @@ the code under review.
 - **Cheap structural fix:** have a non-Claude seat write the drop
   recommendation, or at least a second opinion on it. The dispatch machinery
   already exists. Smaller change than reworking the grader, and it addresses the
-  checkpoint that actually feeds Scott's decision.
+  checkpoint that actually feeds the operator's decision.
 - **Option 1 partially self-mitigates:** its output is a recall number against a
   key neither the recommender nor the panel chose, leaving much less room for
   any one instance's read to shape the result.

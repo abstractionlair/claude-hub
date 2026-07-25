@@ -1,6 +1,6 @@
 # Agent Architecture Design
 
-Status: Early design. Captures the conceptual model and open questions from the Feb 26, 2026 design session (Scott + Main Claude).
+Status: Early design. Captures the conceptual model and open questions from the Feb 26, 2026 design session (operator + Main Claude).
 
 ## Context
 
@@ -171,7 +171,7 @@ The curated memory and ledger are currently single-model-authored (Claude). Intr
 
 - **The append log is fine** — it's raw data, tagged by model. Any consumer can see who wrote what.
 - **Curated memory is harder** — if Gemini distills the log but Claude consumes the result, there's a translation layer. The structured format of ledgers (sections, checkboxes, explicit state) helps — it's already a model-agnostic interop format.
-- **Human contributions are the most model-agnostic content.** Scott's direct inputs (pasted artifacts, research, corrections) carry no model-specific assumptions. Preserving these verbatim and tagged as human-sourced could anchor the shared state.
+- **Human contributions are the most model-agnostic content.** The operator's direct inputs (pasted artifacts, research, corrections) carry no model-specific assumptions. Preserving these verbatim and tagged as human-sourced could anchor the shared state.
 
 ### How Many Agents?
 
