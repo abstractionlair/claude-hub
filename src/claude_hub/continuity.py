@@ -342,7 +342,7 @@ def find_latest_window(
     return None
 
 
-def load_window_chain(path: Path, depth: int = 3) -> str:
+def load_window_chain(path: Path, depth: int = 3, max_chars: int | None = None) -> str:
     """Load a chain of window files by following parent links.
 
     Reads the given window file, then follows parent references up to
@@ -352,6 +352,12 @@ def load_window_chain(path: Path, depth: int = 3) -> str:
     Args:
         path: Path to the starting (most recent) window file.
         depth: Maximum number of parent levels to traverse.
+        max_chars: If set, degrade oldest windows (full -> extract -> stub)
+            until the output fits. Hook stdout budgets are hard harness
+            limits — measured 2026-07-28 at 10,000 chars (Claude Code
+            2.1.220) / 10,000 bytes (codex-cli 0.145.0) *per hook* — and
+            output over the limit is silently truncated. Dropping old
+            context deliberately beats losing arbitrary context silently.
 
     Returns:
         Concatenated content of the window chain with separators.
@@ -383,13 +389,13 @@ def load_window_chain(path: Path, depth: int = 3) -> str:
     # Reverse to chronological order (oldest first)
     chain.reverse()
 
-    parts = []
+    spec = []
     for i, (filename, full_text, body) in enumerate(chain):
         is_leaf = (i == len(chain) - 1)
         content = full_text if is_leaf else body.lstrip("\n")
-        parts.append(f"<!-- window: {filename} -->\n{content}")
+        spec.append((filename, content, _reduced_extract(body)))
 
-    return "\n---\n\n".join(parts)
+    return _assemble_with_budget(spec, max_chars, str(path))
 
 
 def extract_sections(body: str, sections: list[str]) -> str:
@@ -431,10 +437,114 @@ def extract_title(body: str) -> str:
     return ""
 
 
+def _reduced_extract(body: str) -> str:
+    """Title + Open Threads extract — the parts that stay relevant across sessions.
+
+    Used both for older windows in selective mode and as the degradation target
+    when a chain must be reduced to fit an inline budget.
+    """
+    title = extract_title(body)
+    threads = extract_sections(body, ["Open Threads"])
+    summary_parts = ["[older window — selective extract]"]
+    if title:
+        summary_parts.append(title)
+    if threads:
+        summary_parts.append(threads)
+    if not title and not threads:
+        first_line = body.strip().split("\n")[0] if body.strip() else "(empty)"
+        summary_parts.append(first_line)
+    return "\n\n".join(summary_parts)
+
+
+def _assemble_with_budget(
+    spec: list[tuple[str, str, str]],
+    max_chars: int | None,
+    leaf_path: str,
+) -> str:
+    """Join chain parts, degrading oldest windows first until the output fits.
+
+    Args:
+        spec: One (filename, preferred_content, reduced_content) per window,
+            chronological (oldest first; the leaf is last).
+        max_chars: Character budget, or None for unbounded (legacy behavior).
+        leaf_path: Path of the leaf window, named in the reduction notice so a
+            session can retrieve the full chain on demand.
+
+    Degradation ladder per window: preferred -> extract -> stub line. The
+    oldest window is fully exhausted before the next one is touched; the leaf
+    is degraded only as a last resort and never below its extract. Whenever
+    anything was degraded, an explicit notice (counted against the budget)
+    says what was cut and how to load the full chain — a visible, chosen cut
+    instead of the harness's silent one.
+    """
+
+    def render(levels: list[int]) -> str:
+        parts = []
+        degraded = False
+        counts = [0, 0, 0]
+        for (filename, preferred, reduced), level in zip(spec, levels):
+            if level == 0:
+                content = preferred
+            elif level == 1:
+                content = reduced
+                if reduced != preferred:
+                    degraded = True
+            else:
+                title = extract_title(reduced)
+                content = "[window omitted to fit the inline hook budget]" + (
+                    f" {title}" if title else ""
+                )
+                degraded = True
+            counts[level] += 1
+            parts.append(f"<!-- window: {filename} -->\n{content}")
+        out = "\n---\n\n".join(parts)
+        if degraded:
+            out += (
+                f"\n---\n\n[continuity chain reduced to fit the inline hook budget"
+                f" ({max_chars} chars): {counts[0]} full, {counts[1]} extract,"
+                f" {counts[2]} omitted of {len(spec)} windows. Full chain:"
+                f" python3 -m claude_hub.continuity load-chain {leaf_path}]"
+            )
+        return out
+
+    levels = [0] * len(spec)
+    out = render(levels)
+    if max_chars is None or len(out) <= max_chars or not spec:
+        return out
+    while len(out) > max_chars:
+        idx = next((i for i in range(len(spec) - 1) if levels[i] < 2), None)
+        if idx is not None:
+            levels[idx] += 1
+        elif levels[-1] == 0:
+            levels[-1] = 1  # leaf last, and never below its extract
+        else:
+            break  # nothing left to cut; return best effort
+        out = render(levels)
+    # Restore pass: cutting exhausts oldest windows entirely before touching
+    # newer ones, which can leave most of the budget unused once a large window
+    # drops a level (e.g. a huge leaf forced to its extract). Give the slack
+    # back, newest window first, one level at a time, keeping only upgrades
+    # that still fit.
+    improved = True
+    while improved:
+        improved = False
+        for i in range(len(spec) - 1, -1, -1):
+            if levels[i] > 0:
+                trial = list(levels)
+                trial[i] -= 1
+                candidate = render(trial)
+                if len(candidate) <= max_chars:
+                    levels = trial
+                    out = candidate
+                    improved = True
+    return out
+
+
 def load_selective_chain(
     path: Path,
     depth: int = 3,
     full_depth: int = 1,
+    max_chars: int | None = None,
 ) -> str:
     """Load a chain of window files with selective extraction for older windows.
 
@@ -447,6 +557,9 @@ def load_selective_chain(
         depth: Maximum number of parent levels to traverse.
         full_depth: Number of parent levels to load fully (0 = only current
             window is full, 1 = current + immediate parent, etc.)
+        max_chars: If set, degrade oldest windows further (extract -> stub)
+            until the output fits — see load_window_chain for the rationale
+            and the measured per-hook harness budgets.
 
     Returns:
         Concatenated content with separators.
@@ -480,30 +593,19 @@ def load_selective_chain(
     # So items at index >= (len(chain) - 1 - full_depth) get full content
     full_cutoff = len(chain) - 1 - full_depth
 
-    parts = []
+    spec = []
     for i, (filename, full_text, metadata, body) in enumerate(chain):
+        reduced = _reduced_extract(body)
         if i >= full_cutoff:
             # Recent window: full content
             is_leaf = (i == len(chain) - 1)
             content = full_text if is_leaf else body.lstrip("\n")
         else:
             # Older window: title + Open Threads only
-            title = extract_title(body)
-            threads = extract_sections(body, ["Open Threads"])
-            summary_parts = [f"[older window — selective extract]"]
-            if title:
-                summary_parts.append(title)
-            if threads:
-                summary_parts.append(threads)
-            if not title and not threads:
-                # Nothing useful to extract, include a one-liner
-                first_line = body.strip().split("\n")[0] if body.strip() else "(empty)"
-                summary_parts.append(first_line)
-            content = "\n\n".join(summary_parts)
+            content = reduced
+        spec.append((filename, content, reduced))
 
-        parts.append(f"<!-- window: {filename} -->\n{content}")
-
-    return "\n---\n\n".join(parts)
+    return _assemble_with_budget(spec, max_chars, str(path))
 
 
 def finalize_window(path: Path) -> bool:
@@ -575,6 +677,16 @@ def main() -> None:
         "--full-depth", type=int, default=1,
         help="Parent levels to load fully in selective mode (default: 1)",
     )
+    chain_parser.add_argument(
+        "--max-chars", type=int, default=9000,
+        help=(
+            "Degrade oldest windows until output fits this many characters; "
+            "0 = unbounded. Default 9000: harness hook-stdout budgets are hard "
+            "limits, measured at 10,000 chars (Claude Code 2.1.220) / 10,000 "
+            "bytes (codex-cli 0.145.0) per hook, and over-limit output is "
+            "silently truncated."
+        ),
+    )
 
     # find-latest command
     latest_parser = subparsers.add_parser("find-latest", help="Find the most recent window file")
@@ -629,12 +741,16 @@ def main() -> None:
         if not success:
             sys.exit(1)
     elif args.command == "load-chain":
+        max_chars = args.max_chars if args.max_chars > 0 else None
         if args.selective:
             result = load_selective_chain(
-                Path(args.path), depth=args.depth, full_depth=args.full_depth
+                Path(args.path), depth=args.depth, full_depth=args.full_depth,
+                max_chars=max_chars,
             )
         else:
-            result = load_window_chain(Path(args.path), depth=args.depth)
+            result = load_window_chain(
+                Path(args.path), depth=args.depth, max_chars=max_chars
+            )
         print(result)
     elif args.command == "find-latest":
         result = find_latest_window(

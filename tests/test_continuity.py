@@ -664,3 +664,84 @@ class TestFileLock:
             fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
+
+
+# --- chain budget (_assemble_with_budget via loaders) ---
+
+
+class TestChainBudget:
+    def _create_fat_chain(self, tmp_path: Path, n: int = 4, body_kb: int = 4) -> list[Path]:
+        """Create an n-node chain whose bodies are ~body_kb KB each."""
+        directory = tmp_path / "thoughts" / "windows" / "claude-code"
+        paths: list[Path] = []
+        filler = ("x" * 79 + "\n") * (body_kb * 1024 // 80)
+        for i in range(n):
+            name = f"2026-03-07T{8 + 2 * i:02d}-00-00Z.md"
+            meta = {
+                "parent": paths[-1].name if paths else None,
+                "children": [],
+                "session_id": "s1",
+                "harness": "claude-code",
+                "created": f"2026-03-07T{8 + 2 * i:02d}:00:00Z",
+                "updated": f"2026-03-07T{8 + 2 * i:02d}:00:00Z",
+            }
+            body = (
+                f"# Window {i}\n\n## Activity\n\n{filler}\n"
+                f"## Open Threads\n\n- thread from window {i}\n"
+            )
+            p = directory / name
+            p.write_text(_serialize_frontmatter(meta) + body)
+            paths.append(p)
+        return paths
+
+    def test_no_budget_is_unchanged(self, tmp_path: Path) -> None:
+        chain = self._create_fat_chain(tmp_path)
+        assert load_window_chain(chain[-1], depth=3) == load_window_chain(
+            chain[-1], depth=3, max_chars=None
+        )
+
+    def test_under_budget_no_notice(self, tmp_path: Path) -> None:
+        chain = self._create_fat_chain(tmp_path, n=2, body_kb=1)
+        result = load_window_chain(chain[-1], depth=3, max_chars=9000)
+        assert len(result) <= 9000
+        assert "reduced to fit" not in result
+
+    def test_over_budget_fits_and_notices(self, tmp_path: Path) -> None:
+        chain = self._create_fat_chain(tmp_path, n=4, body_kb=4)
+        result = load_window_chain(chain[-1], depth=3, max_chars=9000)
+        assert len(result) <= 9000
+        assert "reduced to fit the inline hook budget" in result
+        # leaf survives in full: its Activity filler is present
+        assert "# Window 3" in result
+        assert result.count("x" * 79) > 0
+        # oldest window degraded: its filler gone, but it is still named
+        assert "2026-03-07T08-00-00Z.md" in result
+        # notice names the retrieval command
+        assert "load-chain" in result
+
+    def test_oldest_degrades_first(self, tmp_path: Path) -> None:
+        chain = self._create_fat_chain(tmp_path, n=3, body_kb=4)
+        result = load_window_chain(chain[-1], depth=3, max_chars=11000)
+        # window 0 reduced/omitted before window 1
+        w0_full = "# Window 0\n\n## Activity"
+        w1_full = "# Window 1\n\n## Activity"
+        assert w0_full not in result
+        assert w1_full in result
+
+    def test_selective_respects_budget(self, tmp_path: Path) -> None:
+        chain = self._create_fat_chain(tmp_path, n=4, body_kb=4)
+        from claude_hub.continuity import load_selective_chain
+
+        result = load_selective_chain(
+            chain[-1], depth=3, full_depth=1, max_chars=9000
+        )
+        assert len(result) <= 9000
+        assert "# Window 3" in result
+
+    def test_leaf_alone_over_budget_reduces_leaf(self, tmp_path: Path) -> None:
+        chain = self._create_fat_chain(tmp_path, n=1, body_kb=12)
+        result = load_window_chain(chain[-1], depth=3, max_chars=9000)
+        # leaf degraded to its extract as last resort — never silently overflows
+        assert len(result) <= 9000
+        assert "# Window 0" in result
+        assert "thread from window 0" in result

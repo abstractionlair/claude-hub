@@ -6,6 +6,34 @@ entries; pick up from a sysadmin/workbench session.
 
 ---
 
+## 2026-07-28 — hook stdout budgets measured; chain loader now bounds its output
+
+Harness hook-stdout limits are hard and silent, and they were measured directly
+(binary search with a controlled SessionStart hook in isolated harness homes):
+
+- Claude Code 2.1.220: a single hook's stdout over **10,000 characters** is
+  replaced inline by a notice + ~2 KB preview; the full text is persisted to a
+  file the session must choose to read.
+- codex-cli 0.145.0: over **10,000 bytes**, the middle is elided (head and tail
+  kept). Same nominal number, different unit — a 10,000-char/10,200-byte payload
+  passes on Claude Code and truncates on Codex.
+- The budget is **per hook stdout**, not per event: two 8,000-char SessionStart
+  hooks both arrive whole.
+
+Consequence for this system: wiring `load-chain` into a SessionStart hook (as the
+architecture docs describe) silently loses inherited context once the window chain
+outgrows the budget — observed 11 times in a mature corpus before diagnosis.
+
+Fix shipped the same day: `load-chain` now takes `--max-chars` (default 9000,
+`0` = unbounded). Over budget, it degrades the *oldest* windows first
+(full → title+Open Threads extract → stub line), never mid-truncates a window,
+never degrades the leaf below its extract, and appends an explicit notice naming
+the command that retrieves the full chain. A deliberate, visible cut instead of
+the harness's silent one. If you register multiple hooks, each gets its own
+budget — splitting large payloads across hooks is the general remedy.
+
+---
+
 ## 2026-07-10 — fork cache probe: forks do NOT reuse the main session's cache
 
 Measured (one `claude --resume <id> --fork-session --print` against a live
@@ -23,7 +51,7 @@ later fork of the same session is a strict prefix-extension, so consecutive
 narrator forks within an hour should partially pay each other back (untested);
 (c) the improvement idea in #4 — feed the fork a recent transcript slice
 instead of full `--resume` — has a hard number attached. No prior record of
-this experiment exists on this box (it may have been run in a different
+this experiment exists on this box (it may have been run in Scott's work
 environment; nothing in windows, docs, memory, or the artifact store).
 
 ---
