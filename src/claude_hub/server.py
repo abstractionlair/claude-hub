@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 from pathlib import Path
@@ -54,6 +55,8 @@ from .auth import (
     require_auth,
     verify_token,
     JWT_SECRET,
+    SCOPE_CHAT,
+    SCOPE_MCP,
     TOKEN_TYPE_AUTHORIZATION_CODE,
 )
 from .oauth_store import OAuthStore
@@ -229,6 +232,20 @@ CONNECTOR_TYPES: dict[str, type] = {
 async def lifespan(app: FastAPI):
     """Initialize and cleanup global state."""
     global routing_table, session_manager, workspace_manager, scheduler, handoff_manager, notification_manager, oauth_store, totp_store, totp_manager, storage_manager, github_client, chat_process_manager, message_router, pending_responses, pg_pool, embedding_task, _cleanup_task, _connector_registry
+
+    # F-5: fail closed on a missing JWT secret.
+    # is_oauth21_enabled() is False when CLAUDE_HUB_JWT_SECRET is unset, and
+    # require_auth() then permits every request — a "development mode" that turns a
+    # failed EnvironmentFile load into a silently unauthenticated public MCP server.
+    # Refuse to serve instead. (Checked in lifespan, not at import, so unit tests that
+    # construct TestClient(app) without a lifespan keep their documented dev-mode
+    # behaviour; a real uvicorn boot always runs this.)
+    if not is_oauth21_enabled():
+        raise RuntimeError(
+            "CLAUDE_HUB_JWT_SECRET is not set — refusing to start. Without it every "
+            "MCP tool and authenticated endpoint would be reachable unauthenticated. "
+            "Check EnvironmentFile=/etc/claude-hub/claude-hub.env."
+        )
 
     routing_table = RoutingTable()
     session_manager = SessionManager(
@@ -452,8 +469,10 @@ class MCPAuthMiddleware:
                 # tools before the per-tool dependency rejected it. verify_token is the
                 # same check the tool dependency already applies, so valid tokens are
                 # unaffected — only tokens that can't call tools anyway are rejected early.
+                # The scope requirement is what keeps a /chat/token handshake credential
+                # from reaching the tool surface.
                 token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-                if not token or verify_token(token) is None:
+                if not token or verify_token(token, allowed_scopes=(SCOPE_MCP,)) is None:
                     # Return 401 directly without touching the app
                     body = b'{"detail":"Authentication required"}'
                     www_auth = f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource"'
@@ -490,7 +509,7 @@ async def protected_resource_metadata():
     Tells MCP clients that this resource requires authentication
     and where to find the authorization server.
     """
-    base_url = "https://claude-hub.abstractionlair.xyz"
+    base_url = BASE_URL
     return {
         "resource": base_url,
         "authorization_servers": [base_url],
@@ -506,7 +525,7 @@ async def oauth_metadata():
 
     Allows MCP clients to discover OAuth endpoints.
     """
-    base_url = "https://claude-hub.abstractionlair.xyz"
+    base_url = BASE_URL
 
     return {
         "issuer": base_url,
@@ -2003,9 +2022,64 @@ async def chat_view():
 
 @app.post("/chat/verify")
 async def chat_verify(request: Request):
-    """Verify chat access - auth handled by nginx basic auth."""
-    # Token auth removed - nginx basic auth handles security
+    """Legacy no-op kept for older clients — it grants nothing and checks nothing.
+
+    Chat access is enforced by the proxy's basic auth on the page and the JWT
+    gate on /ws/chat (see /chat/token), not by anything this returns.
+    """
     return {"status": "ok"}
+
+
+# A chat token only has to survive one handshake: the pages fetch a fresh one
+# immediately before every connect, including reconnects. Keeping the window
+# this small limits the exposure from a token landing in a proxy access log,
+# which is unavoidable when it travels as a WebSocket query parameter.
+CHAT_TOKEN_TTL_SECONDS = 60
+
+
+class ChatTokenResponse(BaseModel):
+    """A handshake credential for the browser chat pages.
+
+    `token` is null in development mode (no CLAUDE_HUB_JWT_SECRET), where the
+    /ws/chat and /ws/group gates are inert and the pages connect without one.
+    """
+    token: Optional[str] = None
+    expires_in: int = 0
+
+
+@app.get("/chat/token", response_model=ChatTokenResponse, operation_id="chat_token")
+async def chat_token(response: Response) -> ChatTokenResponse:
+    """Mint a short-lived token for a chat WebSocket handshake.
+
+    Browsers cannot set an Authorization header on a WebSocket connect, so
+    chat.html and group_chat.html fetch a token here and pass it to /ws/chat
+    and /ws/group as the `token` query parameter.
+
+    Auth: this endpoint carries no in-app gate of its own — it sits behind the
+    same proxy-level auth as the pages that call it, so the browser surface's
+    boundary is unchanged. What the socket gates plus this endpoint buy is
+    protection against cross-site WebSocket hijacking: /ws/chat and /ws/group
+    no longer accept a bare handshake, and a malicious page in the owner's
+    browser cannot read this response to get a token, because the app serves no
+    CORS headers and the same-origin policy blocks the read.
+
+    Privilege: the minted token carries only SCOPE_CHAT, which opens the two
+    chat sockets and nothing else. This endpoint needs no owner TOTP, unlike
+    the OAuth flow that issues SCOPE_MCP tokens, so it must not be able to
+    produce one.
+    """
+    # Never let this sit in an HTTP cache; sw.js keeps it out of the SW cache.
+    response.headers["Cache-Control"] = "no-store"
+
+    if not is_oauth21_enabled():
+        return ChatTokenResponse()
+
+    token, expires_in = create_access_token(
+        client_id="web-chat",
+        scope=SCOPE_CHAT,
+        expires_seconds=CHAT_TOKEN_TTL_SECONDS,
+    )
+    return ChatTokenResponse(token=token, expires_in=expires_in)
 
 
 class ChatSendParams(BaseModel):
@@ -2103,7 +2177,29 @@ async def websocket_chat(websocket: WebSocket):
                       {"type": "result", "text": "...", "duration_ms": N}  — turn complete
                       {"type": "status", "status": "..."}     — status updates
                       {"type": "error", "error": "..."}       — error
+
+    Auth: when OAuth 2.1 is enabled, the handshake requires a valid Bearer
+    token — either an `Authorization: Bearer <token>` header or a `token`
+    query parameter (browsers cannot set headers on WebSocket connects).
+    Unauthenticated handshakes are closed with policy-violation code 1008.
+    This is the same gate /ws/group uses; it matters more here, because every
+    message on this socket is forwarded to a Claude Code subprocess launched
+    with --dangerously-skip-permissions (see chat_process.ChatProcess).
+    A "chat" handshake token from /chat/token is accepted here, as is a
+    full-privilege "mcp" token.
     """
+    if is_oauth21_enabled():
+        token = None
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:]
+        if not token:
+            token = websocket.query_params.get("token")
+        if not token or verify_token(token, allowed_scopes=(SCOPE_CHAT, SCOPE_MCP)) is None:
+            # Reject before accept: policy violation (1008).
+            await websocket.close(code=1008)
+            return
+
     await websocket.accept()
     chat_id = "default"
 
@@ -2325,9 +2421,28 @@ async def terminal_verify_post(request: Request, code: str = Form(...)):
     return response
 
 
+def _enrollment_allowed(request: Request) -> bool:
+    """May this request (re-)enroll the owner's TOTP secret?
+
+    First enrollment is open (bootstrap). Once enrolled, changing the secret requires
+    proving possession of the *current* factor via a valid terminal session — otherwise
+    anyone past the reverse proxy could overwrite the owner's secret with one of their
+    own, silently taking over the second factor that also gates /authorize.
+    """
+    if not totp_manager.is_enrolled(TERMINAL_USER):
+        return True
+    session_id = get_terminal_session(request)
+    return bool(session_id and totp_store.verify_session(session_id))
+
+
 @app.get("/terminal/setup")
 async def terminal_setup_get(request: Request):
     """Show TOTP setup page with QR code."""
+    if not _enrollment_allowed(request):
+        # Already enrolled and the caller has not proven the existing factor.
+        # Do not mint or display a new secret.
+        return RedirectResponse("/terminal/verify", status_code=303)
+
     # Generate new secret
     secret, provisioning_uri = totp_manager.generate_secret(TERMINAL_USER)
     qr_data_uri = totp_manager.generate_qr_data_uri(provisioning_uri)
@@ -2349,6 +2464,18 @@ async def terminal_setup_post(
     code: str = Form(...),
 ):
     """Complete TOTP enrollment."""
+    if not _enrollment_allowed(request):
+        # C-2: enroll_user() overwrites unconditionally (INSERT ... ON CONFLICT DO
+        # UPDATE), and the code is verified against the caller-supplied secret, so
+        # without this gate any caller could replace the owner's factor at will.
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "TOTP is already enrolled. Re-enrollment requires an authenticated "
+                "terminal session proving the current factor."
+            ),
+        )
+
     client_ip = get_client_ip(request)
 
     # Verify test code and enroll
@@ -2452,22 +2579,52 @@ async def group_chat_view():
     return HTMLResponse(content=template_path.read_text())
 
 
+# Participant/conversation identifiers are interpolated into the priming prompt of a
+# model subprocess launched with --dangerously-skip-permissions (see
+# message_router._build_group_priming). Constrain them so a caller cannot smuggle
+# instruction text into that prompt.
+_SAFE_LABEL_RE = re.compile(r"^[A-Za-z0-9 _.-]{1,64}$")
+
+
+def _require_safe_label(value: str, field: str) -> str:
+    if not _SAFE_LABEL_RE.match(value or ""):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid {field}: must be 1-64 chars of letters, digits, space, "
+                "underscore, dot or hyphen."
+            ),
+        )
+    return value
+
+
 @app.get("/api/conversations", operation_id="list_conversations")
-async def list_conversations():
+async def list_conversations(client: str = Depends(get_current_client)):
     """List all active group conversations."""
+    require_auth(client)
     return {"conversations": message_router.list_conversations()}
 
 
 @app.post("/api/conversations", operation_id="create_conversation")
-async def create_conversation(params: CreateConversationRequest = CreateConversationRequest()):
+async def create_conversation(
+    params: CreateConversationRequest = CreateConversationRequest(),
+    client: str = Depends(get_current_client),
+):
     """Create a new group conversation."""
+    require_auth(client)
+    if params.conversation_id is not None:
+        _require_safe_label(params.conversation_id, "conversation_id")
     conv = message_router.create_conversation(params.conversation_id)
     return conv.to_dict()
 
 
 @app.delete("/api/conversations/{conversation_id}", operation_id="delete_conversation")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(
+    conversation_id: str,
+    client: str = Depends(get_current_client),
+):
     """Stop and clean up a conversation, killing all Claude processes."""
+    require_auth(client)
     conv = message_router.get_conversation(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -2476,8 +2633,13 @@ async def delete_conversation(conversation_id: str):
 
 
 @app.get("/api/conversations/{conversation_id}/messages", operation_id="get_conversation_messages")
-async def get_conversation_messages(conversation_id: str, limit: int = 200):
+async def get_conversation_messages(
+    conversation_id: str,
+    limit: int = 200,
+    client: str = Depends(get_current_client),
+):
     """Get messages for a conversation from persistent storage."""
+    require_auth(client)
     if not message_router._store:
         raise HTTPException(status_code=503, detail="Conversation store not available")
     messages = message_router._store.get_messages(conversation_id, limit)
@@ -2485,8 +2647,14 @@ async def get_conversation_messages(conversation_id: str, limit: int = 200):
 
 
 @app.post("/api/conversations/{conversation_id}/add_claude", operation_id="add_claude_to_conversation")
-async def add_claude_to_conversation(conversation_id: str, params: AddClaudeRequest = AddClaudeRequest()):
+async def add_claude_to_conversation(
+    conversation_id: str,
+    params: AddClaudeRequest = AddClaudeRequest(),
+    client: str = Depends(get_current_client),
+):
     """Add a Claude process participant to a group conversation."""
+    require_auth(client)
+    _require_safe_label(params.name, "name")
     conv = message_router.get_conversation(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
@@ -2496,7 +2664,11 @@ async def add_claude_to_conversation(conversation_id: str, params: AddClaudeRequ
 
 
 @app.post("/api/conversations/{conversation_id}/add_codex", operation_id="add_codex_to_conversation")
-async def add_codex_to_conversation(conversation_id: str, params: AddCodexRequest = AddCodexRequest()):
+async def add_codex_to_conversation(
+    conversation_id: str,
+    params: AddCodexRequest = AddCodexRequest(),
+    client: str = Depends(get_current_client),
+):
     """Add a codex CLI participant to a group conversation.
 
     Each turn spawns a fresh `codex exec` (or `codex exec resume`) subprocess.
@@ -2504,6 +2676,8 @@ async def add_codex_to_conversation(conversation_id: str, params: AddCodexReques
     for the lifetime of the conversation. Pass thread_id to resume an existing
     codex thread instead of starting fresh.
     """
+    require_auth(client)
+    _require_safe_label(params.name, "name")
     conv = message_router.get_conversation(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
@@ -2514,13 +2688,19 @@ async def add_codex_to_conversation(conversation_id: str, params: AddCodexReques
 
 
 @app.post("/api/conversations/{conversation_id}/add_gemini", operation_id="add_gemini_to_conversation")
-async def add_gemini_to_conversation(conversation_id: str, params: AddGeminiRequest = AddGeminiRequest()):
+async def add_gemini_to_conversation(
+    conversation_id: str,
+    params: AddGeminiRequest = AddGeminiRequest(),
+    client: str = Depends(get_current_client),
+):
     """Add a gemini CLI participant to a group conversation.
 
     Each turn spawns a fresh `gemini` subprocess (with `--resume <session_id>`
     on every turn after the first). Pass session_id to resume an existing
     gemini session instead of starting fresh.
     """
+    require_auth(client)
+    _require_safe_label(params.name, "name")
     conv = message_router.get_conversation(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
@@ -2557,6 +2737,8 @@ async def websocket_group_chat(websocket: WebSocket, conversation_id: str):
     token — either an `Authorization: Bearer <token>` header or a `token`
     query parameter (browsers cannot set headers on WebSocket connects).
     Unauthenticated handshakes are closed with policy-violation code 1008.
+    A "chat" handshake token from /chat/token is accepted here, as is a
+    full-privilege "mcp" token.
     """
     if is_oauth21_enabled():
         token = None
@@ -2565,7 +2747,7 @@ async def websocket_group_chat(websocket: WebSocket, conversation_id: str):
             token = auth_header[7:]
         if not token:
             token = websocket.query_params.get("token")
-        if not token or verify_token(token) is None:
+        if not token or verify_token(token, allowed_scopes=(SCOPE_CHAT, SCOPE_MCP)) is None:
             # Reject before accept: policy violation (1008).
             await websocket.close(code=1008)
             return
@@ -3698,6 +3880,7 @@ mcp = FastApiMCP(
         "work_graph_node_view",
         "chat_send_chat_send_post",
         "chat_verify_chat_verify_post",
+        "chat_token",
         "chat_view_chat_get",
         "dashboard_view__get",
         "notifications_view_notifications_view_get",

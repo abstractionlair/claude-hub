@@ -287,6 +287,7 @@
 
     <script>
         let ws = null;
+        let connecting = false;   // A handshake token is being fetched
         let isThinking = false;
         let currentStreamDiv = null;  // The message div being streamed into
         let currentStreamText = '';    // Raw text accumulated during stream
@@ -311,9 +312,41 @@
             return null;  // Caller should fall back to textContent
         }
 
-        function connectWebSocket() {
+        // /ws/chat requires a JWT once CLAUDE_HUB_JWT_SECRET is set, and a
+        // WebSocket connect cannot carry an Authorization header — so the token
+        // rides in the query string. Fetch it immediately before each connect
+        // rather than once at page load: the page stays open for hours, and a
+        // token baked in at load would strand every reconnect after it expired.
+        // Returns null in development mode, where the gate is inert.
+        async function fetchHandshakeToken() {
+            try {
+                const resp = await fetch('/chat/token', { cache: 'no-store' });
+                if (!resp.ok) return null;
+                const data = await resp.json();
+                return data.token || null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function connectWebSocket() {
+            if (connecting || (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))) {
+                return;
+            }
+
+            connecting = true;
+            let token;
+            try {
+                token = await fetchHandshakeToken();
+            } finally {
+                connecting = false;
+            }
+
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const url = proto + '//' + location.host + '/ws/chat';
+            let url = proto + '//' + location.host + '/ws/chat';
+            if (token) {
+                url += '?token=' + encodeURIComponent(token);
+            }
 
             ws = new WebSocket(url);
 

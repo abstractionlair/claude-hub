@@ -35,6 +35,11 @@ const NETWORK_FIRST_PATTERNS = [
 const NO_CACHE_PATTERNS = [
   /^\/terminal\/ws/,
   /^\/mcp/,
+  // Short-lived WebSocket handshake tokens. Without this they would fall
+  // through to cache-first (they match no network-first pattern and are not
+  // navigations), so every reconnect after the first would replay a token that
+  // has since expired — and the token would sit in CacheStorage on disk.
+  /^\/chat\/token/,
 ];
 
 
